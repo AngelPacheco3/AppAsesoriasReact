@@ -3,28 +3,58 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const VerAsesoria = () => {
-  const { id } = useParams(); // Se asume que la URL es algo como /ver_asesoria/:id
+  const { id } = useParams();
   const navigate = useNavigate();
 
-  // Estados para almacenar la data, carga y errores
-  const [asesoriaData, setAsesoriaData] = useState(null);
-  const [error, setError] = useState('');
+  // Estados mejorados
+  const [asesoria, setAsesoria] = useState(null);
+  const [maestro, setMaestro] = useState(null);
+  const [alumnos, setAlumnos] = useState([]);
+  const [registrado, setRegistrado] = useState(false);
+  const [pagado, setPagado] = useState(false);
+useEffect(() => {
+  console.log("Estado de inscripción actualizado:", registrado, pagado);
+  setRegistrado(registrado);
+  setPagado(pagado);
+}, [registrado, pagado]);
+
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Configuración de la API
+  const API_BASE_URL = 'http://localhost:5000'; // Ajusta según tu backend
 
   // Cargar datos de la asesoría
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Se espera que el endpoint retorne la estructura que incluya:
-        // { asesoria, maestro, alumnos, registrado, pagado }
-        const response = await axios.get(`/api/ver_detalle_asesoria/${id}`, { withCredentials: true });
-        console.log("Respuesta de la API:", response.data);
-        setAsesoriaData(response.data);
+        setLoading(true);
+        
+        // 1. Obtener datos principales de la asesoría
+        const asesoriaResponse = await axios.get(`${API_BASE_URL}/api/ver_detalle_asesoria/${id}`, {
+          withCredentials: true
+        });
+        
+        console.log("Datos recibidos:", asesoriaResponse.data);
+        
+        if (!asesoriaResponse.data) {
+          throw new Error('No se recibieron datos de la asesoría');
+        }
+
+        const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado, pagado } = asesoriaResponse.data;
+        
+        setAsesoria(asesoriaData);
+        setMaestro(maestroData);
+        setAlumnos(alumnosData || []);
+        setRegistrado(registrado || false);
+        setPagado(pagado || false);
+
       } catch (err) {
+        console.error("Error al cargar datos:", err);
         setError(
-          err.response && err.response.data
-            ? err.response.data.error
-            : 'Error al cargar la asesoría'
+          err.response?.data?.error || 
+          err.message || 
+          'Error al cargar la asesoría'
         );
       } finally {
         setLoading(false);
@@ -36,8 +66,11 @@ const VerAsesoria = () => {
 
   if (loading) {
     return (
-      <div className="container mt-4">
-        <p className="text-center">Cargando información...</p>
+      <div className="container mt-4 text-center">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Cargando...</span>
+        </div>
+        <p className="mt-2">Cargando información de la asesoría...</p>
       </div>
     );
   }
@@ -46,26 +79,31 @@ const VerAsesoria = () => {
     return (
       <div className="container mt-4">
         <div className="alert alert-danger" role="alert">
-          {error}
+          <h4>Error</h4>
+          <p>{error}</p>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => window.location.reload()}
+          >
+            Reintentar
+          </button>
         </div>
       </div>
     );
   }
 
-  if (!asesoriaData) {
+  if (!asesoria) {
     return (
       <div className="container mt-4">
-        <p className="text-center">No se encontraron datos para esta asesoría.</p>
+        <div className="alert alert-warning" role="alert">
+          No se encontraron datos para esta asesoría.
+        </div>
       </div>
     );
   }
 
-  // Desestructura la respuesta del API
-  const { asesoria, maestro, alumnos, registrado, pagado } = asesoriaData;
-
   return (
     <div className="container mt-4">
-      {/* Barra de navegación */}
       <nav className="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
         <button
           className="btn btn-outline-light"
@@ -73,88 +111,131 @@ const VerAsesoria = () => {
         >
           &larr;
         </button>
-        <a className="navbar-brand mx-auto" href="#">
-          Detalles de la Asesoría
-        </a>
+        <span className="navbar-brand mx-auto">Detalles de la Asesoría</span>
       </nav>
 
       <div className="card shadow-lg">
         <div className="card-header bg-primary text-white text-center">
-          <h2 className="mb-0">Detalle de Asesoría</h2>
+          <h2 className="mb-0">{asesoria.descripcion}</h2>
         </div>
+        
         <div className="card-body">
           <div className="row mb-3">
-            {/* Columna de detalles de la asesoría */}
             <div className="col-md-6">
-              <p><strong>ID:</strong> {asesoria.id}</p>
-              <p><strong>Descripción:</strong> {asesoria.descripcion}</p>
-              <p><strong>Costo:</strong> {asesoria.costo}</p>
-              <p><strong>Máximo de Alumnos:</strong> {asesoria.max_alumnos}</p>
+              <h4>Detalles de la Asesoría</h4>
+              <p><strong>Costo:</strong> ${asesoria.costo}</p>
+              <p><strong>Cupo:</strong> {alumnos.length}/{asesoria.max_alumnos} alumnos</p>
               <p><strong>Temas:</strong> {asesoria.temas}</p>
             </div>
-            {/* Columna de datos del maestro */}
+            
             <div className="col-md-6 text-center">
-              <p><strong>Detalle del Maestro</strong></p>
-              <p><strong>ID:</strong> {maestro.id}</p>
+              <h4>Información del Maestro</h4>
               <p><strong>Nombre:</strong> {maestro.nombre}</p>
               <p><strong>Email:</strong> {maestro.email}</p>
               {maestro.foto && (
                 <img
-                  src={`/static/profile_pics/${maestro.foto}`}
+                  src={`${API_BASE_URL}/static/profile_pics/${maestro.foto}`}
                   alt="Foto del Maestro"
-                  className="img-fluid rounded-circle"
+                  className="img-fluid rounded-circle mt-2"
                   style={{ maxWidth: '150px' }}
+                  onError={(e) => {
+                    e.target.onerror = null; 
+                    e.target.src = 'https://via.placeholder.com/150';
+                  }}
                 />
               )}
             </div>
           </div>
+          
           <hr />
-
-          {/* Lista de alumnos registrados */}
-          <h3 className="mb-3">Alumnos Registrados</h3>
-          {alumnos && alumnos.length > 0 ? (
-            <ul className="list-group mb-3">
-              {alumnos.map((alumno) => (
-                <li key={alumno.id} className="list-group-item">
-                  {alumno.nombre} ({alumno.email})
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>No hay alumnos registrados en esta asesoría.</p>
-          )}
-
-          {/* Control de visualización según registro y pago */}
-          {registrado ? (
-            pagado ? (
-              <div className="alert alert-success mt-3">
-                <strong>Enlace de Google Meet:</strong>{' '}
-                <a href={asesoria.meet_link} target="_blank" rel="noopener noreferrer">
-                  {asesoria.meet_link}
-                </a>
+          
+          {/* Lista de alumnos - Versión mejorada */}
+          <div className="mb-4">
+            <h4>Alumnos Registrados</h4>
+            {alumnos.length > 0 ? (
+              <div className="table-responsive">
+                <table className="table table-striped">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Email</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alumnos.map((alumno) => (
+                      <tr key={alumno.id}>
+                        <td>{alumno.nombre}</td>
+                        <td>{alumno.email}</td>
+                        <td>
+                          {alumno.pagado ? (
+                            <span className="badge bg-success">Pagado</span>
+                          ) : (
+                            <span className="badge bg-warning text-dark">Pendiente</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <div className="alert alert-warning mt-3">
-                Ya te has registrado en esta asesoría, pero aún falta realizar el pago.
+              <div className="alert alert-info">
+                No hay alumnos registrados en esta asesoría.
               </div>
-            )
-          ) : (
-            <div className="mt-3">
+            )}
+          </div>
+
+          {/* Sección de Meet Link - Versión mejorada */}
+          {registrado && pagado && asesoria.meet_link ? (
+            <div className="alert alert-success">
+              <h5 className="alert-heading">¡Acceso a la asesoría!</h5>
+              <p>Tu enlace para unirte a la sesión:</p>
+              <div className="input-group mb-3">
+                <input
+                  type="text"
+                  className="form-control"
+                  value={asesoria.meet_link}
+                  readOnly
+                />
+                <button
+                  className="btn btn-success"
+                  onClick={() => window.open(asesoria.meet_link, '_blank')}
+                >
+                  Unirse ahora
+                </button>
+              </div>
+              <p className="mb-0"><small>Este enlace es personal e intransferible.</small></p>
+            </div>
+          ) : registrado ? (
+            <div className="alert alert-warning">
+              <h5 className="alert-heading">Registro completado</h5>
+              <p>Tu lugar está reservado. Completa el pago para obtener acceso.</p>
               <button
-                className="btn btn-primary btn-block"
+                className="btn btn-primary"
                 onClick={() => navigate(`/pago_asesoria/${asesoria.id}`)}
               >
-                Pagar y Obtener Enlace de Meet
+                Proceder al pago
+              </button>
+            </div>
+          ) : (
+            <div className="d-grid gap-2">
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={() => navigate(`/pago_asesoria/${asesoria.id}`)}
+              >
+                Registrarse y pagar
               </button>
             </div>
           )}
         </div>
+        
         <div className="card-footer text-center">
           <button
-            className="btn btn-primary"
-            onClick={() => window.history.back()}
+            className="btn btn-outline-secondary"
+            onClick={() => navigate(-1)}
           >
-            &larr; Regresar
+            Volver atrás
           </button>
         </div>
       </div>

@@ -63,9 +63,6 @@ def load_user(user_id):
 with app.app_context():
     db.create_all()
 
-# ----------------------------------------------------
-# ENDPOINTS API (adaptados para React)
-# ----------------------------------------------------
 
 @app.route('/api/login', methods=['POST'])
 def login_api():
@@ -90,9 +87,11 @@ def logout_api():
     logout_user()
     return jsonify({"message": "Sesión cerrada correctamente"})
 
+import os
+
 @app.route('/api/registro_maestro', methods=['POST'])
 def registro_maestro_api():
-    data = request.get_json() if request.is_json else request.form
+    data = request.form  # Flask maneja archivos con request.form + request.files
     nombre = data.get('nombre')
     email = data.get('email')
     password = data.get('password')
@@ -100,22 +99,38 @@ def registro_maestro_api():
     especializacion = data.get('especializacion')
     edad = data.get('edad')
     nivel = data.get('nivel')
+
+    # Validaciones
+    if not all([nombre, email, password, confirm_password, especializacion, edad, nivel]):
+        return jsonify({"error": "Todos los campos son obligatorios."}), 400
+    
     if password != confirm_password:
         return jsonify({"error": "Las contraseñas no coinciden."}), 400
+
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "El correo ya está registrado. Usa uno diferente."}), 400
+    
+    IMAGES_PATH = r"C:\Users\cread\Documents\GitHub\AppAsesoriasReact\src\images"
+# Manejo de la imagen
     foto_filename = None
     if 'foto' in request.files:
         foto = request.files['foto']
-        foto_filename = foto.filename
-        foto_path = os.path.join(app.root_path, 'static/profile_pics', foto_filename)
-        foto.save(foto_path)
+        foto_filename = f"{email}_{foto.filename}"  # Evita nombres duplicados
+        foto_path = os.path.join(IMAGES_PATH, foto_filename)
+
+        # Crear carpeta si no existe
+        os.makedirs(IMAGES_PATH, exist_ok=True)
+
+        foto.save(foto_path)  # Guardar la imagen
+
+    # Registro del maestro con la imagen
     nuevo_maestro = User(
         nombre=nombre, email=email, password=password, rol='maestro',
         especializacion=especializacion, foto=foto_filename, edad=edad, nivel=nivel
     )
     db.session.add(nuevo_maestro)
     db.session.commit()
+
     return jsonify({"message": "Maestro registrado con éxito", "redirect": "/api/login"})
 
 @app.route('/api/registro_alumno', methods=['POST'])
@@ -253,17 +268,25 @@ def nueva_asesoria_api():
 @login_required
 def registrar_asesoria_api(id):
     asesoria = Asesoria.query.get_or_404(id)
-    if len(asesoria.alumnos) >= asesoria.max_alumnos:
+
+    # Verificar si la asesoría ya alcanzó el límite de alumnos
+    if len(asesoria.registros) >= asesoria.max_alumnos:
         return jsonify({"error": "La asesoría ya alcanzó el máximo de alumnos."}), 400
+
+    # Buscar si el alumno ya está registrado
     registro = RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id, alumno_id=current_user.id).first()
     if registro:
         return jsonify({"error": "Ya estás registrado en esta asesoría."}), 400
+
+    # Registrar al alumno correctamente
     nuevo_registro = RegistroAsesoria(asesoria_id=asesoria.id, alumno_id=current_user.id, pagado=False)
     db.session.add(nuevo_registro)
-    asesoria.alumnos.append(current_user)
     db.session.commit()
-    return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
+    # Actualizar la relación para reflejar la inscripción
+    db.session.refresh(asesoria)
+
+    return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 @app.route('/api/ver_asesoria/<int:id>', methods=['GET'])
 @login_required
 def ver_asesoria_api(id):
@@ -310,12 +333,25 @@ def ver_asesoria_api(id):
     }
     return jsonify(context)
 
-@app.route('/api/ver_detalle_asesoria/<int:id>')
+@app.route('/api/ver_detalle_asesoria/<int:id>', methods=['GET'])
 @login_required
 def ver_detalle_asesoria_api(id):
     asesoria = Asesoria.query.get_or_404(id)
     maestro = User.query.get(asesoria.maestro_id)
-    alumnos = [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in asesoria.alumnos]
+
+    # Corregir la consulta de alumnos registrados
+    alumnos = db.session.query(User).join(RegistroAsesoria)\
+        .filter(RegistroAsesoria.asesoria_id == asesoria.id).all()
+
+    total_pagado = db.session.query(
+        db.func.sum(case((RegistroAsesoria.pagado == True, asesoria.costo)))
+    ).filter(RegistroAsesoria.asesoria_id == asesoria.id).scalar() or 0.0
+
+    # Verificar si el usuario está registrado y pagó
+    registro = RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id, alumno_id=current_user.id).first()
+    registrado = bool(registro)
+    pagado = registro.pagado if registro else False
+
     data = {
         "asesoria": {
             "id": asesoria.id,
@@ -330,7 +366,10 @@ def ver_detalle_asesoria_api(id):
             "nombre": maestro.nombre,
             "email": maestro.email
         },
-        "alumnos": alumnos
+        "alumnos": [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in alumnos],
+        "total_pagado": total_pagado,
+        "registrado": registrado,
+        "pagado": pagado
     }
     return jsonify(data)
 
@@ -443,4 +482,4 @@ def ver_detalle_asesoria_maestro_api(id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5000)

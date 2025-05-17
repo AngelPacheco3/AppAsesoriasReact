@@ -3,7 +3,10 @@ body {
     margin: 0;
     padding: 0;
     height: 100vh;
-    background-image: url('../images/Fondo1.jpeg') no-repeat center center fixed; /* Imagen de fondo */
+    background-image: url('./.Fondo1.jpeg'); /* Imagen de fondo */
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-attachment: fixed;
     background-size: cover;
     font-family: Arial, sans-serif; /* Fuente general */
 }
