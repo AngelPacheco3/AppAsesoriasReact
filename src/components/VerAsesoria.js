@@ -6,45 +6,54 @@ const VerAsesoria = () => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  // Estados mejorados
+  // Estados
   const [asesoria, setAsesoria] = useState(null);
   const [maestro, setMaestro] = useState(null);
   const [alumnos, setAlumnos] = useState([]);
   const [registrado, setRegistrado] = useState(false);
   const [pagado, setPagado] = useState(false);
-useEffect(() => {
-  console.log("Estado de inscripción actualizado:", registrado, pagado);
-  setRegistrado(registrado);
-  setPagado(pagado);
-}, [registrado, pagado]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // Configuración de la API
-  const API_BASE_URL = 'http://localhost:5000'; // Ajusta según tu backend
+  const API_BASE_URL = 'http://localhost:5000';
 
-  // Cargar datos de la asesoría
+// const imageUrl = maestro.foto 
+//   ? `${API_BASE_URL}/images/${maestro.foto}`
+//   : 'https://via.placeholder.com/150';
+  // Efecto para actualizar estado de inscripción
+  useEffect(() => {
+    console.log("Estado de inscripción actualizado:", registrado, pagado);
+    setRegistrado(registrado);
+    setPagado(pagado);
+  }, [registrado, pagado]);
+
+  // Efecto para cargar datos de la asesoría
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        // 1. Obtener datos principales de la asesoría
-        const asesoriaResponse = await axios.get(`${API_BASE_URL}/api/ver_detalle_asesoria/${id}`, {
+        const response = await axios.get(`${API_BASE_URL}/api/ver_detalle_asesoria/${id}`, {
           withCredentials: true
         });
         
-        console.log("Datos recibidos:", asesoriaResponse.data);
-        
-        if (!asesoriaResponse.data) {
+        if (!response.data) {
           throw new Error('No se recibieron datos de la asesoría');
         }
 
-        const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado, pagado } = asesoriaResponse.data;
+        const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado, pagado } = response.data;
+        
+        // Construir objeto maestro con URL de foto
+        const maestroConFoto = {
+          ...maestroData,
+          fotoUrl: maestroData.foto 
+            ? `${API_BASE_URL}/images/${maestroData.foto.replace(/^\/+/, '')}`
+            : 'https://via.placeholder.com/150'
+        };
         
         setAsesoria(asesoriaData);
-        setMaestro(maestroData);
+        setMaestro(maestroConFoto);
         setAlumnos(alumnosData || []);
         setRegistrado(registrado || false);
         setPagado(pagado || false);
@@ -92,7 +101,7 @@ useEffect(() => {
     );
   }
 
-  if (!asesoria) {
+  if (!asesoria || !maestro) {
     return (
       <div className="container mt-4">
         <div className="alert alert-warning" role="alert">
@@ -130,26 +139,28 @@ useEffect(() => {
             
             <div className="col-md-6 text-center">
               <h4>Información del Maestro</h4>
-              <p><strong>Nombre:</strong> {maestro.nombre}</p>
-              <p><strong>Email:</strong> {maestro.email}</p>
-              {maestro.foto && (
-                <img
-                  src={`${API_BASE_URL}/static/profile_pics/${maestro.foto}`}
-                  alt="Foto del Maestro"
-                  className="img-fluid rounded-circle mt-2"
-                  style={{ maxWidth: '150px' }}
-                  onError={(e) => {
-                    e.target.onerror = null; 
-                    e.target.src = 'https://via.placeholder.com/150';
-                  }}
-                />
-              )}
+              <p><strong>Nombre:</strong> {maestro?.nombre}</p>
+              <p><strong>Email:</strong> {maestro?.email}</p>
+              <img
+                src={maestro?.fotoUrl}
+                alt={`Foto de ${maestro?.nombre || 'maestro'}`}
+                className="img-fluid rounded-circle mt-2"
+                style={{ 
+                  width: '150px', 
+                  height: '150px', 
+                  objectFit: 'cover',
+                  border: '3px solid #f8f9fa'
+                }}
+                onError={(e) => {
+                  e.target.onerror = null; 
+                  e.target.src = 'https://via.placeholder.com/150';
+                }}
+              />
             </div>
           </div>
           
           <hr />
           
-          {/* Lista de alumnos - Versión mejorada */}
           <div className="mb-4">
             <h4>Alumnos Registrados</h4>
             {alumnos.length > 0 ? (
@@ -186,7 +197,6 @@ useEffect(() => {
             )}
           </div>
 
-          {/* Sección de Meet Link - Versión mejorada */}
           {registrado && pagado && asesoria.meet_link ? (
             <div className="alert alert-success">
               <h5 className="alert-heading">¡Acceso a la asesoría!</h5>
