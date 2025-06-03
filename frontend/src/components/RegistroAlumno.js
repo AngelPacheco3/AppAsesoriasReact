@@ -1,5 +1,6 @@
+// RegistroAlumno.js
 import React, { useState } from 'react';
-import axios from '../axiosConfig'; // Asegúrate de que la ruta sea correcta
+import axios from '../axiosConfig';
 import { useNavigate } from 'react-router-dom';
 
 const RegistroAlumno = () => {
@@ -13,10 +14,26 @@ const RegistroAlumno = () => {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    
+    // VALIDACIONES:
+    if (name === 'email') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) {
+        setError('Formato de correo inválido');
+        return;
+      }
+    }
+    if (name === 'nombre') {
+      if (/[^a-zA-Z\s]/.test(value)) {
+        setError('El nombre solo debe contener letras y espacios');
+        return;
+      }
+    }
+    // FIN DE VALIDACIONES
+
+    setError('');
+    setFormData({ ...formData, [name]: value.trim() });
   };
 
   const handleSubmit = async (e) => {
@@ -32,6 +49,7 @@ const RegistroAlumno = () => {
       alert('Registro exitoso.');
       navigate('/login');
     } catch (err) {
+      console.error(err.response || err);
       setError('Error al registrar alumno.');
     }
   };

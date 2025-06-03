@@ -1,3 +1,4 @@
+// NuevaAsesoria.js
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -14,10 +15,16 @@ const NuevaAsesoria = () => {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setAsesoria({
-      ...asesoria,
-      [e.target.name]: e.target.value
-    });
+    const { name, value } = e.target;
+    
+    // VALIDACIÓN AGREGADA: Ejemplo de verificación que la descripción no esté vacía
+    if (name === 'descripcion' && value.trim() === '') {
+      setError('La descripción es obligatoria.');
+      return;
+    }
+    
+    setError('');
+    setAsesoria({ ...asesoria, [name]: value });
   };
 
   const handleSubmit = (e) => {

@@ -1,5 +1,5 @@
+// RegistroMaestro.js
 import React, { useState } from 'react';
-//import axios from 'axios';
 import axios from '../axiosConfig';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,12 +19,31 @@ const RegistroMaestro = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
+
+    // VALIDACIONES AGREGADAS:
+    if (name === 'email') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) {
+        setError('Formato de correo inválido');
+        return; // No se actualiza el estado hasta corregir el valor
+      }
+    }
+
+    if (name === 'nombre') {
+      // Solo se permiten letras y espacios
+      if (/[^a-zA-Z\s]/.test(value)) {
+        setError('El nombre solo debe contener letras y espacios');
+        return;
+      }
+    }
+    // FIN DE VALIDACIONES
+
+    // Se limpia el error y se actualiza el estado; para campos de texto, se aplica .trim()
+    setError('');
+    setFormData({ ...formData, [name]: value.trim() });
   };
 
+  // Para el manejo del campo de archivo (foto)
   const handleFileChange = (e) => {
     setFormData({
       ...formData,
@@ -40,14 +59,16 @@ const RegistroMaestro = () => {
       return;
     }
 
+    // Se crea un objeto FormData para enviar la información junto con el archivo
     const data = new FormData();
     for (const key in formData) {
       data.append(key, formData[key]);
     }
 
-    axios.post('/api/registro_maestro', data, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    axios
+      .post('/api/registro_maestro', data, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
       .then(() => {
         alert('Registro exitoso.');
         navigate('/login');

@@ -7,11 +7,27 @@ from sqlalchemy import case
 import os
 import logging
 from flask_cors import CORS
+from bleach import clean
+from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+
 
 # Configuración de la aplicación
+# Para la prevencion de inyeccopnes SQL/JS ya teniamos SQLAlchemy que previene de inyecciones SQL y Flask-Login
 app = Flask(__name__)
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///asesorias.db'
 app.config['SECRET_KEY'] = 'tu_clave_secreta'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+# Se uso SESSION_COOKIE_SAMESITE para prevenir ataques CSRF y XSS, y SESSION_COOKIE_HTTPONLY para prevenir acceso a cookies desde JavaScript.
+
+# Hash de contraseñas
+ph = PasswordHasher()
+
+# Si además deseas activar CSRF en la app:
+csrf = CSRFProtect(app)
 
 # Configuración específica para las imágenes (modificada)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,7 +63,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
+    password = db.Column(db.String(255), nullable=False)
     rol = db.Column(db.String(10), nullable=False)
     especializacion = db.Column(db.String(200), nullable=True)
     foto = db.Column(db.String(200), nullable=True)
@@ -104,22 +120,64 @@ def load_user(user_id):
 with app.app_context():
     db.create_all()
 
+#Login y registro de usuarios
+#Se verifica que exista el usuario.
+#Luego, en el bloque try/except, se usa ph.verify(user.password, password) para comparar la contraseña ingresada contra el hash almacenado.
+#Si la verificación falla, se retorna un error.
+#En caso exitoso, se continúa con el login habitual.
 @app.route('/api/login', methods=['POST'])
 def login_api():
-    data = request.get_json() if request.is_json else request.form
-    email = data.get('email')
-    password = data.get('password')
-    user = User.query.filter_by(email=email).first()
-    if user is None or user.password != password:
-        return jsonify({"error": "Correo o contraseña incorrectos"}), 400
-    login_user(user)
-    if user.rol == 'alumno':
-        redirect_url = "/api/dashboard_alumno"
-    elif user.rol == 'maestro':
-        redirect_url = "/api/dashboard_maestro"
-    else:
-        redirect_url = "/"
-    return jsonify({"message": "Inicio de sesión exitoso", "redirect": redirect_url})
+    try:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        if not data:
+            return jsonify({"error": "Datos no proporcionados"}), 400
+        
+        email = data.get('email', '').strip()
+        password = data.get('password', '')
+        if not email or not password:
+            return jsonify({"error": "Correo y contraseña son requeridos"}), 400
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            app.logger.info(f"Login fallido: usuario {email} no existe")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+
+        try:
+            ph.verify(user.password, password)
+            if ph.check_needs_rehash(user.password):
+                user.password = ph.hash(password)
+                db.session.commit()
+                app.logger.info(f"Contraseña actualizada para {email}")
+        except argon2_exceptions.VerifyMismatchError:
+            app.logger.info(f"Contraseña incorrecta para {email}")
+            return jsonify({"error": "Credenciales inválidas"}), 401
+        except argon2_exceptions.VerificationError as e:
+            app.logger.error(f"Error de verificación: {str(e)}")
+            return jsonify({"error": "Error en la verificación de credenciales"}), 500
+
+        login_user(user)
+        if user.rol == 'alumno':
+            redirect_url = "/api/dashboard_alumno"
+        elif user.rol == 'maestro':
+            redirect_url = "/api/dashboard_maestro"
+        else:
+            redirect_url = "/"
+            
+        return jsonify({
+            "message": "Inicio de sesión exitoso",
+            "redirect": redirect_url,
+            "user": {
+                "id": user.id,
+                "nombre": user.nombre,
+                "email": user.email,
+                "rol": user.rol
+            }
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error en login: {str(e)}")
+        return jsonify({"error": "Error en el servidor"}), 500
+
 
 @app.route('/api/logout', methods=['POST'])
 @login_required
@@ -128,53 +186,71 @@ def logout_api():
     return jsonify({"message": "Sesión cerrada correctamente"})
 
 # Modificación del endpoint de registro de maestro
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/registro_maestro', methods=['POST'])
 def registro_maestro_api():
     try:
+        # Para el registro de maestro con archivo, se asume el envío en multipart/form-data:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        if not data:
+            return jsonify({"error": "Datos no proporcionados"}), 400
+        
+        # Validación básica de campos
+        required_fields = ['nombre', 'email', 'password', 'confirm_password']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Faltan campos requeridos"}), 400
+
+        # Sanitización
+        nombre = clean(data.get('nombre', ''), strip=True)
+        email = clean(data.get('email', ''), strip=True)
+        password = data.get('password', '')
+        confirm_password = data.get('confirm_password', '')
+
+        if password != confirm_password:
+            return jsonify({"error": "Las contraseñas no coinciden"}), 400
+
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "El correo ya está registrado"}), 409
+
+        # Crear hash de contraseña con Argon2
+        hashed_password = ph.hash(password)
+
+        # Crear nuevo maestro
+        nuevo_maestro = User(
+            nombre=nombre,
+            email=email,
+            password=hashed_password,
+            rol='maestro',
+            especializacion=clean(data.get('especializacion', ''), strip=True),
+            edad=int(data.get('edad', 0)) if data.get('edad', '').isdigit() else None,
+            nivel=clean(data.get('nivel', ''), strip=True)
+        )
+        
+        # Manejo del archivo, si está enviado
         foto_filename = None
         if 'foto' in request.files:
             file = request.files['foto']
             if file and allowed_file(file.filename):
-                # Generar nombre único basado en email
-                email = request.form.get('email')
                 safe_email = email.split('@')[0].replace('.', '_')
                 ext = file.filename.rsplit('.', 1)[1].lower()
                 filename = f"{safe_email}_profile.{ext}"
-                
-                # Guardar en la nueva ubicación
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
                 foto_filename = filename
+                nuevo_maestro.foto = foto_filename
 
-        data = request.form.to_dict()
-
-        # Validaciones
-        if data['password'] != data['confirm_password']:
-            return jsonify({"error": "Las contraseñas no coinciden."}), 400
-            
-        if User.query.filter_by(email=data['email']).first():
-            return jsonify({"error": "El correo ya está registrado. Usa uno diferente."}), 400
-
-        # Crear nuevo maestro
-        nuevo_maestro = User(
-            nombre=data['nombre'],
-            email=data['email'],
-            password=data['password'],
-            rol='maestro',
-            especializacion=data.get('especializacion'),
-            foto=foto_filename,  # Solo guardamos el nombre del archivo
-            edad=data.get('edad'),
-            nivel=data.get('nivel')
-        )
-        
         db.session.add(nuevo_maestro)
         db.session.commit()
         
+        app.logger.info(f"Maestro registrado: {email}")
         return jsonify({
-            "message": "Maestro registrado con éxito", 
-            "redirect": "/api/login",
-            "foto": foto_filename  # Devolver el nombre del archivo
+            "message": "Maestro registrado con éxito",
+            "redirect": "/api/login"
         })
         
+    except IntegrityError as e:
+        db.session.rollback()
+        app.logger.error(f"Error de integridad en registro: {str(e)}")
+        return jsonify({"error": "Error en la base de datos"}), 500
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error en registro maestro: {str(e)}")
@@ -182,22 +258,53 @@ def registro_maestro_api():
 
 
 # Asegúrate de tener esta ruta en tu Flask app
-
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/registro_alumno', methods=['POST'])
 def registro_alumno_api():
-    data = request.get_json() if request.is_json else request.form
-    nombre = data.get('nombre')
-    email = data.get('email')
-    password = data.get('password')
-    confirm_password = data.get('confirm_password')
-    if password != confirm_password:
-        return jsonify({"error": "Las contraseñas no coinciden."}), 400
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "El correo ya está registrado. Usa uno diferente."}), 400
-    nuevo_alumno = User(nombre=nombre, email=email, password=password, rol='alumno')
-    db.session.add(nuevo_alumno)
-    db.session.commit()
-    return jsonify({"message": "Alumno registrado con éxito", "redirect": "/api/login"})
+    try:
+        # Aceptar datos en JSON o form-data:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        if not data:
+            return jsonify({"error": "Datos no proporcionados"}), 400
+        
+        required_fields = ['nombre', 'email', 'password', 'confirm_password']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Faltan campos requeridos"}), 400
+        
+        nombre = clean(data.get('nombre', ''), strip=True)
+        email = clean(data.get('email', ''), strip=True)
+        password = data.get('password', '')
+        confirm_password = data.get('confirm_password', '')
+        
+        if password != confirm_password:
+            return jsonify({"error": "Las contraseñas no coinciden"}), 400
+        
+        if User.query.filter_by(email=email).first():
+            return jsonify({"error": "El correo ya está registrado"}), 409
+
+        hashed_password = ph.hash(password)
+        
+        nuevo_alumno = User(
+            nombre=nombre,
+            email=email,
+            password=hashed_password,
+            rol='alumno'
+        )
+        
+        db.session.add(nuevo_alumno)
+        db.session.commit()
+        app.logger.info(f"Alumno registrado: {email}")
+        
+        return jsonify({
+            "message": "Alumno registrado con éxito",
+            "redirect": "/api/login"
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error en registro alumno: {str(e)}")
+        return jsonify({"error": "Error en el servidor"}), 500
+
 
 @app.route('/api/dashboard_maestro')
 @login_required
@@ -261,7 +368,13 @@ def validar_registro_api(id):
 @login_required
 def pago_asesoria_api(id):
     asesoria = Asesoria.query.get_or_404(id)
-    data = request.get_json() if request.is_json else request.form
+    data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
+
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
     vencimiento = data.get('vencimiento')
@@ -282,7 +395,13 @@ def pago_asesoria_api(id):
 @login_required
 def procesar_pago_api(id):
     asesoria = Asesoria.query.get_or_404(id)
-    data = request.get_json() if request.is_json else request.form
+    data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
+
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
     vencimiento = data.get('vencimiento')
@@ -298,15 +417,23 @@ def procesar_pago_api(id):
     db.session.commit()
     return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
+# Ruta para crear una nueva asesoría
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/nueva_asesoria', methods=['POST'])
 @login_required
 def nueva_asesoria_api():
-    data = request.get_json() if request.is_json else request.form
+    data = request.get_json() if request.is_json else request.form.to_dict()
+    
+    # Sanitizar campos de texto
+    data['descripcion'] = clean(data.get('descripcion', ''), strip=True)
+    data['temas'] = clean(data.get('temas', ''), strip=True)
+    # Otra sanitización si es necesario, como meet_link (aunque generalmente es una URL)
+    
     nueva_asesoria = Asesoria(
-        descripcion=data.get('descripcion'),
+        descripcion=data['descripcion'],
         costo=data.get('costo'),
         max_alumnos=data.get('max_alumnos'),
-        temas=data.get('temas'),
+        temas=data['temas'],
         maestro_id=current_user.id,
         meet_link=data.get('meet_link')
     )
@@ -314,6 +441,7 @@ def nueva_asesoria_api():
     db.session.commit()
     return jsonify({"message": "Asesoría creada con éxito.", "redirect": "/api/dashboard_maestro"})
 
+# Ruta para registrar a un alumno en una asesoría
 @app.route('/api/registrar_asesoria/<int:id>', methods=['POST'])
 @login_required
 def registrar_asesoria_api(id):
@@ -337,6 +465,9 @@ def registrar_asesoria_api(id):
     db.session.refresh(asesoria)
 
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
+
+
+# Ruta para ver los detalles de una asesoría
 @app.route('/api/ver_asesoria/<int:id>', methods=['GET'])
 @login_required
 def ver_asesoria_api(id):
@@ -455,6 +586,14 @@ def ver_asesorias_totales_api():
 @app.route('/api/borrar_asesoria/<int:id>', methods=['DELETE'])
 @login_required
 def borrar_asesoria_api(id):
+    # Asumimos que el token CSRF se envía en un JSON o en los query parameters
+    data = request.get_json() if request.is_json else request.args
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
+
     asesoria = Asesoria.query.get_or_404(id)
     try:
         RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id).delete()
@@ -465,6 +604,9 @@ def borrar_asesoria_api(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar la asesoría. Intenta de nuevo."}), 500
 
+
+# Ruta para editar una asesoría
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos descripcion y temas.
 @app.route('/api/editar_asesoria/<int:id>', methods=['GET', 'PUT'])
 @login_required
 def editar_asesoria_api(id):
@@ -482,8 +624,17 @@ def editar_asesoria_api(id):
                 "meet_link": asesoria.meet_link
             }
         })
-    data = request.get_json() if request.is_json else request.form
-    asesoria.descripcion = data.get('descripcion', asesoria.descripcion)
+    
+    data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
+
+    # Sanitizar campos antes de actualizar
+    asesoria.descripcion = clean(data.get('descripcion', asesoria.descripcion), strip=True)
+    asesoria.temas = clean(data.get('temas', asesoria.temas), strip=True)
     asesoria.costo = data.get('costo', asesoria.costo)
     asesoria.max_alumnos = data.get('max_alumnos', asesoria.max_alumnos)
     asesoria.temas = data.get('temas', asesoria.temas)
@@ -500,6 +651,7 @@ def editar_asesoria_api(id):
             "meet_link": asesoria.meet_link
         }
     })
+
 
 @app.route('/api/ver_detalle_asesoria_maestro_dup/<int:id>')
 @login_required

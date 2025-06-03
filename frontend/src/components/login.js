@@ -1,7 +1,7 @@
 // Login.js
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios'; // ✅ Cambia la importación si ya eliminaste axiosConfig.js
+import axios from 'axios'; // Si usas axiosConfig, reemplaza 'axios' por esa importación
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -9,17 +9,31 @@ const Login = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  // Función para manejar el envío del formulario
+  // Función para validar y actualizar el email
+  const handleEmailChange = (e) => {
+    const inputEmail = e.target.value;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inputEmail)) {
+      setError('Formato de correo inválido');
+      setEmail(inputEmail);
+    } else {
+      setError('');
+      setEmail(inputEmail.trim());
+    }
+  };
+
+  // Función para manejar el envío del formulario de login
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Envía la petición en formato JSON; puedes incluir withCredentials si es necesario
       const response = await axios.post('/api/login', { email, password }, { withCredentials: true });
-      
-      console.log(response.data);  // 🔍 Verifica la respuesta del backend
+      console.log(response.data); // Para verificar la respuesta del backend
 
       if (response.data.redirect) {
-            const rutaDestino = response.data.redirect.replace("/api/", "/");  // 🔄 Corrige la ruta para React
-      navigate(rutaDestino);  // ✅ Redirige correctamente dentro de React Router
+        // Corrige la ruta para React (si el backend devuelve rutas que comienzan con "/api/")
+        const rutaDestino = response.data.redirect.replace("/api/", "/");
+        navigate(rutaDestino);
       } else {
         setError('Error en la redirección después del login.');
       }
@@ -28,7 +42,7 @@ const Login = () => {
     }
   };
 
-  // Simula un mensaje de alerta
+  // Función para mostrar un mensaje de alerta en opciones extras de login
   const mostrarMensaje = () => {
     alert('Una disculpa, pero por el momento estamos teniendo problemas técnicos. Por favor, intente más tarde.');
   };
@@ -48,7 +62,7 @@ const Login = () => {
               placeholder="Ejemplo: usuario@correo.com"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={handleEmailChange}
             />
           </div>
           <div className="form-group">
