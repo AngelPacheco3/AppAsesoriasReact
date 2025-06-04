@@ -10,7 +10,9 @@ from flask_cors import CORS
 from bleach import clean
 from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
 from argon2 import PasswordHasher, exceptions as argon2_exceptions
-
+# Agregar estas líneas después de las importaciones existentes
+from werkzeug.utils import secure_filename
+from flask import abort 
 
 # Configuración de la aplicación
 # Para la prevencion de inyeccopnes SQL/JS ya teniamos SQLAlchemy que previene de inyecciones SQL y Flask-Login
@@ -21,6 +23,8 @@ app.config['SECRET_KEY'] = 'tu_clave_secreta'
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+app.config['WTF_CSRF_ENABLED'] = False
+
 # Se uso SESSION_COOKIE_SAMESITE para prevenir ataques CSRF y XSS, y SESSION_COOKIE_HTTPONLY para prevenir acceso a cookies desde JavaScript.
 
 # Hash de contraseñas
@@ -63,7 +67,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
     rol = db.Column(db.String(10), nullable=False)
     especializacion = db.Column(db.String(200), nullable=True)
     foto = db.Column(db.String(200), nullable=True)
@@ -143,9 +147,9 @@ def login_api():
             return jsonify({"error": "Credenciales inválidas"}), 401
 
         try:
-            ph.verify(user.password, password)
-            if ph.check_needs_rehash(user.password):
-                user.password = ph.hash(password)
+            ph.verify(user.password_hash, password)
+            if ph.check_needs_rehash(user.password_hash):
+                user.password_hash = ph.hash(password)
                 db.session.commit()
                 app.logger.info(f"Contraseña actualizada para {email}")
         except argon2_exceptions.VerifyMismatchError:
@@ -176,6 +180,7 @@ def login_api():
         
     except Exception as e:
         app.logger.error(f"Error en login: {str(e)}")
+        app.logger.info(f"Request content type: {request.content_type}, data: {data}")
         return jsonify({"error": "Error en el servidor"}), 500
 
 
@@ -186,7 +191,7 @@ def logout_api():
     return jsonify({"message": "Sesión cerrada correctamente"})
 
 # Modificación del endpoint de registro de maestro
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/registro_maestro', methods=['POST'])
 def registro_maestro_api():
     try:
@@ -219,7 +224,7 @@ def registro_maestro_api():
         nuevo_maestro = User(
             nombre=nombre,
             email=email,
-            password=hashed_password,
+            password_hash=hashed_password,
             rol='maestro',
             especializacion=clean(data.get('especializacion', ''), strip=True),
             edad=int(data.get('edad', 0)) if data.get('edad', '').isdigit() else None,
@@ -254,11 +259,12 @@ def registro_maestro_api():
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error en registro maestro: {str(e)}")
+        app.logger.info(f"Request content type: {request.content_type}, data: {data}")
         return jsonify({"error": "Error en el servidor"}), 500
 
 
 # Asegúrate de tener esta ruta en tu Flask app
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/registro_alumno', methods=['POST'])
 def registro_alumno_api():
     try:
@@ -282,12 +288,11 @@ def registro_alumno_api():
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "El correo ya está registrado"}), 409
 
-        hashed_password = ph.hash(password)
-        
+        password_hash = ph.hash(password)
         nuevo_alumno = User(
             nombre=nombre,
             email=email,
-            password=hashed_password,
+            password_hash=password_hash,  # Guarda el hash en el campo password_hash
             rol='alumno'
         )
         
@@ -303,6 +308,7 @@ def registro_alumno_api():
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error en registro alumno: {str(e)}")
+        app.logger.info(f"Request content type: {request.content_type}, data: {data}")
         return jsonify({"error": "Error en el servidor"}), 500
 
 
@@ -418,7 +424,7 @@ def procesar_pago_api(id):
     return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
 # Ruta para crear una nueva asesoría
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/nueva_asesoria', methods=['POST'])
 @login_required
 def nueva_asesoria_api():
@@ -606,7 +612,7 @@ def borrar_asesoria_api(id):
 
 
 # Ruta para editar una asesoría
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos descripcion y temas.
+# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos descripcion y temas.
 @app.route('/api/editar_asesoria/<int:id>', methods=['GET', 'PUT'])
 @login_required
 def editar_asesoria_api(id):
@@ -688,6 +694,7 @@ def ver_detalle_asesoria_maestro_api(id):
         "alumnos": [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in alumnos]
     }
     return jsonify(data)
+
 
 if __name__ == '__main__':
     with app.app_context():
