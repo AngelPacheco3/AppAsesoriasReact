@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import axios from '../axiosConfig';  // ✅ CAMBIO IMPORTANTE: Usar axiosConfig
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -15,7 +15,8 @@ const Login = () => {
     setError('');
 
     try {
-      const response = await axios.post('/api/login', { email, password }, { withCredentials: true });
+      // No necesitas manejar CSRF manualmente, axiosConfig lo hace
+      const response = await axios.post('/api/login', { email, password });
       
       console.log(response.data);
 
@@ -28,7 +29,6 @@ const Login = () => {
     } catch (err) {
       console.error('Error en login:', err);
       
-      // 🆕 MEJORADO: Manejo específico de errores de validación de contraseña
       if (err.response?.status === 400) {
         const errorData = err.response.data;
         if (errorData.details && Array.isArray(errorData.details)) {
@@ -53,7 +53,7 @@ const Login = () => {
       <div className="login-box border p-4 text-white rounded shadow-lg">
         <h2 className="text-center mb-4">Inicio de sesión</h2>
         
-        {/* 🆕 MEJORADO: Mejor visualización de errores */}
+
         {error && (
           <div className="alert alert-danger" role="alert">
             <small>{error}</small>
@@ -88,7 +88,7 @@ const Login = () => {
             />
           </div>
           
-          {/* 🆕 MEJORADO: Botón con loading */}
+          
           <button 
             type="submit" 
             className="btn btn-light btn-block"

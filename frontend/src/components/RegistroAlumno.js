@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios'; // 🔧 CORREGIDO: axios directo
+import axios from '../axiosConfig';  // o '../axiosConfig' según la ubicación
 import { useNavigate } from 'react-router-dom';
 
 const RegistroAlumno = () => {

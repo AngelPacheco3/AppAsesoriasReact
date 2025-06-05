@@ -1,4 +1,5 @@
 import React from 'react';
+import axios from '../axiosConfig';  // o '../axiosConfig' según la ubicación
 import { useNavigate } from 'react-router-dom';
 
 const CrearUsuario = () => {

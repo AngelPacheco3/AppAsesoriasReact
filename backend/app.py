@@ -23,7 +23,7 @@ app.config['SECRET_KEY'] = 'tu_clave_secreta'
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
-app.config['WTF_CSRF_ENABLED'] = False
+app.config['WTF_CSRF_ENABLED'] = True
 
 # Se uso SESSION_COOKIE_SAMESITE para prevenir ataques CSRF y XSS, y SESSION_COOKIE_HTTPONLY para prevenir acceso a cookies desde JavaScript.
 
@@ -183,6 +183,10 @@ def login_api():
         app.logger.info(f"Request content type: {request.content_type}, data: {data}")
         return jsonify({"error": "Error en el servidor"}), 500
 
+@app.route('/api/csrf-token', methods=['GET'])
+def get_csrf_token():
+    token = generate_csrf()
+    return jsonify({'csrf_token': token})
 
 @app.route('/api/logout', methods=['POST'])
 @login_required
@@ -375,11 +379,6 @@ def validar_registro_api(id):
 def pago_asesoria_api(id):
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
 
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
@@ -402,11 +401,6 @@ def pago_asesoria_api(id):
 def procesar_pago_api(id):
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
 
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
@@ -594,11 +588,7 @@ def ver_asesorias_totales_api():
 def borrar_asesoria_api(id):
     # Asumimos que el token CSRF se envía en un JSON o en los query parameters
     data = request.get_json() if request.is_json else request.args
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
+
 
     asesoria = Asesoria.query.get_or_404(id)
     try:
@@ -632,11 +622,6 @@ def editar_asesoria_api(id):
         })
     
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
 
     # Sanitizar campos antes de actualizar
     asesoria.descripcion = clean(data.get('descripcion', asesoria.descripcion), strip=True)

@@ -1,33 +1,37 @@
-// axiosConfig.js - Versión corregida con CSRF
 import axios from 'axios';
 
 // Configurar axios con credenciales
 axios.defaults.withCredentials = true;
 
-// Función para obtener CSRF token
-const getCSRFToken = () => {
-  // Buscar el token en las cookies
-  const name = 'csrf_token=';
-  const decodedCookie = decodeURIComponent(document.cookie);
-  const ca = decodedCookie.split(';');
-  for(let i = 0; i < ca.length; i++) {
-    let c = ca[i];
-    while (c.charAt(0) === ' ') {
-      c = c.substring(1);
-    }
-    if (c.indexOf(name) === 0) {
-      return c.substring(name.length, c.length);
-    }
+// Variable para almacenar el token CSRF
+let csrfToken = null;
+
+// Función para obtener el token CSRF del backend
+const fetchCSRFToken = async () => {
+  try {
+    const response = await axios.get('/api/csrf-token');
+    csrfToken = response.data.csrf_token;
+    return csrfToken;
+  } catch (error) {
+    console.error('Error obteniendo CSRF token:', error);
+    return null;
   }
-  return null;
 };
 
-// Interceptor para agregar CSRF token a todas las peticiones POST/PUT/DELETE
+// Obtener el token al cargar la aplicación
+fetchCSRFToken();
+
+// Interceptor para agregar CSRF token a todas las peticiones que lo necesitan
 axios.interceptors.request.use(
-  (config) => {
-    // Solo agregar CSRF token para métodos que lo necesitan
+  async (config) => {
+    // Solo agregar CSRF token para métodos que modifican datos
     if (['post', 'put', 'delete', 'patch'].includes(config.method?.toLowerCase())) {
-      const csrfToken = getCSRFToken();
+      // Si no tenemos token, obtenerlo primero
+      if (!csrfToken) {
+        await fetchCSRFToken();
+      }
+      
+      // Agregar el token al header
       if (csrfToken) {
         config.headers['X-CSRFToken'] = csrfToken;
       }
@@ -42,13 +46,38 @@ axios.interceptors.request.use(
 // Interceptor para manejar errores de respuesta
 axios.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    // Si el error es por token CSRF inválido, obtener nuevo token y reintentar
+    if (error.response?.status === 400 && error.response?.data?.error?.includes('CSRF')) {
+      const originalRequest = error.config;
+      
+      // Evitar bucle infinito
+      if (!originalRequest._retry) {
+        originalRequest._retry = true;
+        
+        // Obtener nuevo token
+        await fetchCSRFToken();
+        
+        // Actualizar el header con el nuevo token
+        if (csrfToken) {
+          originalRequest.headers['X-CSRFToken'] = csrfToken;
+        }
+        
+        // Reintentar la petición
+        return axios(originalRequest);
+      }
+    }
+    
+    // Redireccionar al login si no está autenticado
     if (error.response?.status === 401) {
-      // Redireccionar al login si no está autenticado
       window.location.href = '/login';
     }
+    
     return Promise.reject(error);
   }
 );
+
+// Exportar función para refrescar token manualmente si es necesario
+export const refreshCSRFToken = fetchCSRFToken;
 
 export default axios;
