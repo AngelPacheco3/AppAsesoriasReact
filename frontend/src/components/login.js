@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from '../axiosConfig';  // ✅ CAMBIO IMPORTANTE: Usar axiosConfig
+import axios, { saveJWTToken } from '../axiosConfig';  // Importar también saveJWTToken
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -15,10 +15,14 @@ const Login = () => {
     setError('');
 
     try {
-      // No necesitas manejar CSRF manualmente, axiosConfig lo hace
       const response = await axios.post('/api/login', { email, password });
       
-      console.log(response.data);
+      console.log('Login exitoso:', response.data);
+
+      // NUEVO: Guardar el JWT token
+      if (response.data.token) {
+        saveJWTToken(response.data.token);
+      }
 
       if (response.data.redirect) {
         const rutaDestino = response.data.redirect.replace("/api/", "/");
@@ -53,7 +57,6 @@ const Login = () => {
       <div className="login-box border p-4 text-white rounded shadow-lg">
         <h2 className="text-center mb-4">Inicio de sesión</h2>
         
-
         {error && (
           <div className="alert alert-danger" role="alert">
             <small>{error}</small>
@@ -87,7 +90,6 @@ const Login = () => {
               disabled={loading}
             />
           </div>
-          
           
           <button 
             type="submit" 

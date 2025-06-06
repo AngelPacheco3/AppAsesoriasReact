@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from '../axiosConfig';  // o '../axiosConfig' según la ubicación
+import axios from '../axiosConfig';
 import { useParams, useNavigate } from 'react-router-dom';
 
 const PagoAsesoria = () => {
@@ -13,9 +13,11 @@ const PagoAsesoria = () => {
     cvv: '',
     celular: ''
   });
+  const [csrfToken, setCsrfToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Obtener datos de la asesoría
   useEffect(() => {
     axios.get(`/api/ver_asesoria/${id}`)
       .then(response => {
@@ -27,6 +29,13 @@ const PagoAsesoria = () => {
         setLoading(false);
       });
   }, [id]);
+
+  // Obtener el token CSRF al montar el componente
+  useEffect(() => {
+    axios.get('/api/csrf-token')
+      .then(res => setCsrfToken(res.data.csrfToken))
+      .catch(() => setError('No se pudo obtener el token CSRF'));
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
@@ -43,7 +52,8 @@ const PagoAsesoria = () => {
       return;
     }
 
-    axios.post(`/api/procesar_pago/${id}`, formData)
+    // Enviar los datos del formulario + csrfToken
+    axios.post(`/api/procesar_pago/${id}`, { ...formData, csrfToken })
       .then(() => {
         alert('Pago realizado con éxito.');
         navigate('/dashboard_alumno');

@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import axios from '../axiosConfig';  // o '../axiosConfig' según la ubicación
+// IMPORTANTE: Importar removeJWTToken junto con axios
+import axios, { removeJWTToken } from '../axiosConfig';  // ← CAMBIO AQUÍ
 import { useNavigate } from 'react-router-dom';
 
 const DashboardAlumno = () => {
   const [asesorias, setAsesorias] = useState([]);
   const [error, setError] = useState('');
-  const [actualizar, setActualizar] = useState(false); // ✅ Estado para forzar actualización
+  const [actualizar, setActualizar] = useState(false);
   const navigate = useNavigate();
 
-  // Función para cargar asesorías (usada en useEffect)
+  // Función para cargar asesorías (sin cambios)
   const cargarAsesorias = () => {
-    axios.get('/api/dashboard_alumno', { withCredentials: true })
+    axios.get('/api/dashboard_alumno')
       .then(response => {
-        console.log("Datos actualizados recibidos:", response.data);  // 🔍 Depuración
+        console.log("Datos actualizados recibidos:", response.data);
         setAsesorias(Array.isArray(response.data.asesorias) ? response.data.asesorias : []);
       })
       .catch(err => {
@@ -21,25 +22,38 @@ const DashboardAlumno = () => {
       });
   };
 
-  // Cargar asesorías al montar el componente y cuando se cree una nueva asesoría
   useEffect(() => {
     cargarAsesorias();
-  }, [actualizar]); // ✅ Se ejecuta cada vez que `actualizar` cambia
+  }, [actualizar]);
 
-  // Manejo del cierre de sesión
+  // 🔴 FUNCIÓN handleLogout ACTUALIZADA PARA JWT
   const handleLogout = async () => {
     if (window.confirm("¿Deseas cerrar sesión?")) {
       try {
-        await axios.post('/api/logout', {}, { withCredentials: true });  // ✅ Cierra sesión en Flask
-        console.log("Sesión cerrada correctamente.");  // 🔍 Depuración
-        setAsesorias([]);  // ✅ Limpia asesorías al cerrar sesión
-        navigate('/login');  // ✅ Redirige al login
+        // 1. Llamar al endpoint de logout (opcional con JWT)
+        await axios.post('/api/logout', {});
+        
+        // 2. IMPORTANTE: Eliminar el JWT token del localStorage
+        removeJWTToken();
+        
+        console.log("Sesión cerrada correctamente.");
+        
+        // 3. Limpiar el estado local
+        setAsesorias([]);
+        
+        // 4. Redirigir al login
+        navigate('/login');
       } catch (err) {
         console.error("Error al cerrar sesión:", err);
+        
+        // IMPORTANTE: Incluso si hay error, eliminar token y redirigir
+        removeJWTToken();
+        navigate('/login');
       }
     }
   };
 
+  // Resto del componente sin cambios...
   return (
     <>
       {/* Navbar */}

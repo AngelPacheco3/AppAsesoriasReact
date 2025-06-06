@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+#from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case
@@ -13,6 +13,9 @@ from argon2 import PasswordHasher, exceptions as argon2_exceptions
 # Agregar estas líneas después de las importaciones existentes
 from werkzeug.utils import secure_filename
 from flask import abort 
+import jwt
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
 # Configuración de la aplicación
 # Para la prevencion de inyeccopnes SQL/JS ya teniamos SQLAlchemy que previene de inyecciones SQL y Flask-Login
@@ -24,6 +27,10 @@ app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
 app.config['WTF_CSRF_ENABLED'] = True
+app.config['JWT_SECRET_KEY'] = 'tu-clave-secreta-jwt-super-segura'  # Cambiar en producción
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)  # Token válido por 24 horas
+app.config['JWT_ALGORITHM'] = 'HS256'
+
 
 # Se uso SESSION_COOKIE_SAMESITE para prevenir ataques CSRF y XSS, y SESSION_COOKIE_HTTPONLY para prevenir acceso a cookies desde JavaScript.
 
@@ -54,8 +61,70 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Inicializar extensiones
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
-login_manager = LoginManager(app)
+#login_manager = LoginManager(app)
 CORS(app, supports_credentials=True)
+
+@app.after_request
+def set_security_headers(response):
+    """
+    Agrega encabezados de seguridad HTTP a todas las respuestas
+    para proteger contra diversos tipos de ataques web.
+    """
+    
+    # 1. Previene que la página sea embebida en frames (protege contra clickjacking)
+    response.headers['X-Frame-Options'] = 'DENY'
+    
+    # 2. Previene que el navegador detecte automáticamente el tipo de contenido
+    # (protege contra ataques MIME-type sniffing)
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    
+    # 3. Habilita el filtro XSS del navegador (legacy, pero útil para navegadores antiguos)
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    
+    # 4. Controla qué información se envía en el header Referer
+    # 'strict-origin-when-cross-origin' envía el origen completo solo en mismo origen
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # 5. Content Security Policy - Controla qué recursos puede cargar la página
+    # Esta es una política básica que permite recursos del mismo origen
+    csp = (
+        "default-src 'self'; "  # Por defecto, solo recursos del mismo origen
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com; "  # Scripts
+        "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "  # Estilos
+        "font-src 'self' https://cdnjs.cloudflare.com; "  # Fuentes
+        "img-src 'self' data: https: blob:; "  # Imágenes
+        "connect-src 'self' http://localhost:* ws://localhost:*; "  # Conexiones AJAX/WebSocket
+        "frame-ancestors 'none'; "  # Previene embedding
+        "form-action 'self'; "  # Formularios solo al mismo origen
+        "base-uri 'self';"  # Restricción de <base> tag
+    )
+    response.headers['Content-Security-Policy'] = csp
+    
+    # 6. Permissions Policy (antes Feature Policy) - Controla qué APIs del navegador puede usar
+    permissions = (
+        "accelerometer=(), "  # Desactiva acceso al acelerómetro
+        "camera=(), "  # Desactiva acceso a la cámara
+        "geolocation=(), "  # Desactiva geolocalización
+        "microphone=(), "  # Desactiva micrófono
+        "payment=(), "  # Desactiva API de pagos
+        "usb=()"  # Desactiva acceso USB
+    )
+    response.headers['Permissions-Policy'] = permissions
+    
+    # 7. SOLO para producción con HTTPS (comentado para desarrollo local)
+    # Descomenta esta línea cuando uses HTTPS en producción:
+    # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
+    
+    # 8. Previene que el navegador haga MIME sniffing en las descargas
+    response.headers['X-Download-Options'] = 'noopen'
+    
+    # 9. DNS Prefetch Control - Controla cuándo el navegador hace prefetch de DNS
+    response.headers['X-DNS-Prefetch-Control'] = 'off'
+    
+    # 10. Previene que Adobe products abran el sitio
+    response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
+    
+    return response
 
 # MODELOS
 asesoria_alumno = db.Table('asesoria_alumno',
@@ -63,7 +132,7 @@ asesoria_alumno = db.Table('asesoria_alumno',
     db.Column('alumno_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
 )
 
-class User(UserMixin, db.Model):
+class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
@@ -95,6 +164,69 @@ class RegistroAsesoria(db.Model):
     alumno = db.relationship('User', backref=db.backref('registro_asesorias', lazy=True))
 # Ruta para servir archivos estáticos (fotos de perfil)
 
+def generate_jwt_token(user):
+    """Genera un token JWT para el usuario"""
+    payload = {
+        'user_id': user.id,
+        'email': user.email,
+        'rol': user.rol,
+        'nombre': user.nombre,
+        'exp': datetime.now(timezone.utc) + app.config['JWT_ACCESS_TOKEN_EXPIRES'],
+        'iat': datetime.now(timezone.utc)
+    }
+    token = jwt.encode(payload, app.config['JWT_SECRET_KEY'], algorithm=app.config['JWT_ALGORITHM'])
+    return token
+
+def jwt_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):  # ← IMPORTANTE:args, kwargs
+        token = None
+
+#Buscar token en headers,
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                # Formato esperado: "Bearer <token>"
+                parts = auth_header.split(' ')
+                if len(parts) == 2 and parts[0] == 'Bearer':
+                    token = parts[1]
+                else:
+                    return jsonify({'error': 'Token format invalid. Use: Bearer <token>'}), 401
+            except Exception as e:
+                return jsonify({'error': 'Token format error'}), 401
+
+        if not token:
+            return jsonify({'error': 'Token missing. Authorization header required'}), 401
+
+        try:
+            # Decodificar token
+            payload = jwt.decode(
+                token, 
+                app.config['JWT_SECRET_KEY'], 
+                algorithms=[app.config['JWT_ALGORITHM']]
+            )
+
+#Obtener usuario de la DB,
+            user = User.query.get(payload['user_id'])
+            if not user:
+                return jsonify({'error': 'User not found'}), 401
+
+#Pasar usuario a la función a través del request,
+            request.current_user = user
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired', 'code': 'TOKEN_EXPIRED'}), 401
+        except jwt.InvalidTokenError as e:
+            return jsonify({'error': f'Invalid token: {str(e)}'}), 401
+        except Exception as e:
+            app.logger.error(f"JWT Error: {str(e)}")
+            return jsonify({'error': 'Token validation error'}), 401
+
+#Llamar a la función original con sus argumentos,
+        return f(*args, **kwargs)  # ← IMPORTANTE: pasar los argumentos
+
+    return decorated_function
+
 @app.route('/images/<path:filename>')
 def serve_image(filename):
     try:
@@ -117,9 +249,9 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+# @login_manager.user_loader
+# def load_user(user_id):
+#     return User.query.get(int(user_id))
 
 with app.app_context():
     db.create_all()
@@ -129,6 +261,7 @@ with app.app_context():
 #Luego, en el bloque try/except, se usa ph.verify(user.password, password) para comparar la contraseña ingresada contra el hash almacenado.
 #Si la verificación falla, se retorna un error.
 #En caso exitoso, se continúa con el login habitual.
+# ACTUALIZAR la ruta de login para devolver JWT
 @app.route('/api/login', methods=['POST'])
 def login_api():
     try:
@@ -159,7 +292,9 @@ def login_api():
             app.logger.error(f"Error de verificación: {str(e)}")
             return jsonify({"error": "Error en la verificación de credenciales"}), 500
 
-        login_user(user)
+        # NUEVO: Generar token JWT en lugar de usar login_user()
+        token = generate_jwt_token(user)
+        
         if user.rol == 'alumno':
             redirect_url = "/api/dashboard_alumno"
         elif user.rol == 'maestro':
@@ -170,6 +305,7 @@ def login_api():
         return jsonify({
             "message": "Inicio de sesión exitoso",
             "redirect": redirect_url,
+            "token": token,  # NUEVO: Enviar el token
             "user": {
                 "id": user.id,
                 "nombre": user.nombre,
@@ -180,7 +316,6 @@ def login_api():
         
     except Exception as e:
         app.logger.error(f"Error en login: {str(e)}")
-        app.logger.info(f"Request content type: {request.content_type}, data: {data}")
         return jsonify({"error": "Error en el servidor"}), 500
 
 @app.route('/api/csrf-token', methods=['GET'])
@@ -189,10 +324,25 @@ def get_csrf_token():
     return jsonify({'csrf_token': token})
 
 @app.route('/api/logout', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def logout_api():
-    logout_user()
+    # Con JWT, el logout se maneja en el cliente eliminando el token
     return jsonify({"message": "Sesión cerrada correctamente"})
+
+@app.route('/api/verify-token', methods=['GET'])
+@jwt_required
+def verify_token():
+    """Verifica si el token es válido y devuelve info del usuario"""
+    user = request.current_user
+    return jsonify({
+        "valid": True,
+        "user": {
+            "id": user.id,
+            "nombre": user.nombre,
+            "email": user.email,
+            "rol": user.rol
+        }
+    })
 
 # Modificación del endpoint de registro de maestro
 # Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
@@ -317,8 +467,9 @@ def registro_alumno_api():
 
 
 @app.route('/api/dashboard_maestro')
-@login_required
+@jwt_required  # Cambiado de @login_required
 def dashboard_maestro_api():
+    current_user = request.current_user  # NUEVO: obtener usuario del request
     asesorias = Asesoria.query.filter_by(maestro_id=current_user.id).all()
     asesorias_data = []
     for a in asesorias:
@@ -341,8 +492,9 @@ def dashboard_maestro_api():
     return jsonify({"asesorias": asesorias_data})
 
 @app.route('/api/dashboard_alumno')
-@login_required
+@jwt_required  # Cambiado de @login_required
 def dashboard_alumno_api():
+    current_user = request.current_user  # NUEVO: obtener usuario del request
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
     data = []
     for a, m in results:
@@ -364,8 +516,9 @@ def dashboard_alumno_api():
 # Registro y pago de asesorías
 
 @app.route('/api/validar_registro/<int:id>', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def validar_registro_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     if current_user in asesoria.alumnos:
         return jsonify({"error": "Ya estás registrado en esta asesoría."}), 400
@@ -375,10 +528,16 @@ def validar_registro_api(id):
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
 @app.route('/api/pago_asesoria/<int:id>', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def pago_asesoria_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
 
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
@@ -397,10 +556,16 @@ def pago_asesoria_api(id):
     return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
 @app.route('/api/procesar_pago/<int:id>', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def procesar_pago_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
 
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
@@ -420,14 +585,14 @@ def procesar_pago_api(id):
 # Ruta para crear una nueva asesoría
 # Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
 @app.route('/api/nueva_asesoria', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def nueva_asesoria_api():
+    current_user = request.current_user  # NUEVO
     data = request.get_json() if request.is_json else request.form.to_dict()
     
     # Sanitizar campos de texto
     data['descripcion'] = clean(data.get('descripcion', ''), strip=True)
     data['temas'] = clean(data.get('temas', ''), strip=True)
-    # Otra sanitización si es necesario, como meet_link (aunque generalmente es una URL)
     
     nueva_asesoria = Asesoria(
         descripcion=data['descripcion'],
@@ -443,8 +608,9 @@ def nueva_asesoria_api():
 
 # Ruta para registrar a un alumno en una asesoría
 @app.route('/api/registrar_asesoria/<int:id>', methods=['POST'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def registrar_asesoria_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
 
     # Verificar si la asesoría ya alcanzó el límite de alumnos
@@ -466,11 +632,11 @@ def registrar_asesoria_api(id):
 
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
-
 # Ruta para ver los detalles de una asesoría
 @app.route('/api/ver_asesoria/<int:id>', methods=['GET'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def ver_asesoria_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     maestro = User.query.get(asesoria.maestro_id)
     alumnos = db.session.query(User).join(RegistroAsesoria)\
@@ -517,13 +683,14 @@ def ver_asesoria_api(id):
 # Modificación del endpoint para ver asesoría
 # Modificación del endpoint para ver asesoría (CORREGIDO)
 @app.route('/api/ver_detalle_asesoria/<int:id>', methods=['GET'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def ver_detalle_asesoria_api(id):
+    current_user = request.current_user  # NUEVO
     try:
         asesoria = Asesoria.query.get_or_404(id)
         maestro = User.query.get(asesoria.maestro_id)
         
-        # Construir la ruta relativa para el frontend (sintaxis Python correcta)
+        # Construir la ruta relativa para el frontend
         foto_path = f"/images/{maestro.foto}" if maestro.foto else None
         
         alumnos = db.session.query(User).join(RegistroAsesoria)\
@@ -548,7 +715,7 @@ def ver_detalle_asesoria_api(id):
                 "id": maestro.id,
                 "nombre": maestro.nombre,
                 "email": maestro.email,
-                "foto": foto_path,  # Ruta relativa para el frontend
+                "foto": foto_path,
                 "foto_filename": maestro.foto
             },
             "alumnos": [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in alumnos],
@@ -563,8 +730,9 @@ def ver_detalle_asesoria_api(id):
         return jsonify({"error": "Error al cargar los detalles"}), 500
 
 @app.route('/api/ver_asesorias_totales')
-@login_required
+@jwt_required  # Cambiado de @login_required
 def ver_asesorias_totales_api():
+    current_user = request.current_user  # NUEVO (aunque no se usa en esta ruta)
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
     asesorias_list = []
     for a, m in results:
@@ -584,11 +752,16 @@ def ver_asesorias_totales_api():
     return jsonify({"asesorias": asesorias_list})
 
 @app.route('/api/borrar_asesoria/<int:id>', methods=['DELETE'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def borrar_asesoria_api(id):
-    # Asumimos que el token CSRF se envía en un JSON o en los query parameters
+    current_user = request.current_user  # NUEVO
+    # Verificar token CSRF
     data = request.get_json() if request.is_json else request.args
-
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
 
     asesoria = Asesoria.query.get_or_404(id)
     try:
@@ -600,12 +773,12 @@ def borrar_asesoria_api(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar la asesoría. Intenta de nuevo."}), 500
 
-
 # Ruta para editar una asesoría
 # Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos descripcion y temas.
 @app.route('/api/editar_asesoria/<int:id>', methods=['GET', 'PUT'])
-@login_required
+@jwt_required  # Cambiado de @login_required
 def editar_asesoria_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     if asesoria.maestro_id != current_user.id:
         return jsonify({"error": "No tienes permiso para editar esta asesoría."}), 403
@@ -622,13 +795,17 @@ def editar_asesoria_api(id):
         })
     
     data = request.get_json() if request.is_json else request.form.to_dict()
+    csrf_token = data.get('csrfToken')
+    try:
+        validate_csrf(csrf_token)
+    except Exception as e:
+        return jsonify({"error": "Invalid CSRF token."}), 403
 
     # Sanitizar campos antes de actualizar
     asesoria.descripcion = clean(data.get('descripcion', asesoria.descripcion), strip=True)
     asesoria.temas = clean(data.get('temas', asesoria.temas), strip=True)
     asesoria.costo = data.get('costo', asesoria.costo)
     asesoria.max_alumnos = data.get('max_alumnos', asesoria.max_alumnos)
-    asesoria.temas = data.get('temas', asesoria.temas)
     asesoria.meet_link = data.get('meet_link', asesoria.meet_link)
     db.session.commit()
     return jsonify({
@@ -643,15 +820,15 @@ def editar_asesoria_api(id):
         }
     })
 
-
 @app.route('/api/ver_detalle_asesoria_maestro_dup/<int:id>')
-@login_required
+@jwt_required  # Cambiado de @login_required
 def ver_detalle_asesoria_maestro_dup(id):
     return redirect(url_for('ver_detalle_asesoria_maestro_api', id=id))
 
 @app.route('/api/ver_detalle_asesoria_maestro/<int:id>')
-@login_required
+@jwt_required  # Cambiado de @login_required
 def ver_detalle_asesoria_maestro_api(id):
+    current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     maestro = User.query.get(asesoria.maestro_id)
     alumnos = db.session.query(User).join(RegistroAsesoria)\
