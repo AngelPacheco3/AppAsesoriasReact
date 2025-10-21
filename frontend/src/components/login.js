@@ -1,48 +1,53 @@
-// Login.js
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios'; // Si usas axiosConfig, reemplaza 'axios' por esa importación
+import axios, { saveJWTToken } from '../axiosConfig';  // Importar también saveJWTToken
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Función para validar y actualizar el email
-  const handleEmailChange = (e) => {
-    const inputEmail = e.target.value;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(inputEmail)) {
-      setError('Formato de correo inválido');
-      setEmail(inputEmail);
-    } else {
-      setError('');
-      setEmail(inputEmail.trim());
-    }
-  };
-
-  // Función para manejar el envío del formulario de login
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
+
     try {
-      // Envía la petición en formato JSON; puedes incluir withCredentials si es necesario
-      const response = await axios.post('/api/login', { email, password }, { withCredentials: true });
-      console.log(response.data); // Para verificar la respuesta del backend
+      const response = await axios.post('/api/login', { email, password });
+      
+      console.log('Login exitoso:', response.data);
+
+      // NUEVO: Guardar el JWT token
+      if (response.data.token) {
+        saveJWTToken(response.data.token);
+      }
 
       if (response.data.redirect) {
-        // Corrige la ruta para React (si el backend devuelve rutas que comienzan con "/api/")
         const rutaDestino = response.data.redirect.replace("/api/", "/");
         navigate(rutaDestino);
       } else {
         setError('Error en la redirección después del login.');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Error en el inicio de sesión');
+      console.error('Error en login:', err);
+      
+      if (err.response?.status === 400) {
+        const errorData = err.response.data;
+        if (errorData.details && Array.isArray(errorData.details)) {
+          setError(`${errorData.error}: ${errorData.details.join(', ')}`);
+        } else {
+          setError(errorData.error || 'Credenciales incorrectas');
+        }
+      } else {
+        setError('Error en el servidor. Intenta de nuevo.');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Función para mostrar un mensaje de alerta en opciones extras de login
   const mostrarMensaje = () => {
     alert('Una disculpa, pero por el momento estamos teniendo problemas técnicos. Por favor, intente más tarde.');
   };
@@ -51,7 +56,13 @@ const Login = () => {
     <div className="container d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
       <div className="login-box border p-4 text-white rounded shadow-lg">
         <h2 className="text-center mb-4">Inicio de sesión</h2>
-        {error && <p className="text-center text-danger">{error}</p>}
+        
+        {error && (
+          <div className="alert alert-danger" role="alert">
+            <small>{error}</small>
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="email" className="text-white">Correo Electrónico</label>
@@ -62,7 +73,8 @@ const Login = () => {
               placeholder="Ejemplo: usuario@correo.com"
               required
               value={email}
-              onChange={handleEmailChange}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
             />
           </div>
           <div className="form-group">
@@ -75,12 +87,19 @@ const Login = () => {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
             />
           </div>
-          <button type="submit" className="btn btn-light btn-block">
-            Iniciar Sesión
+          
+          <button 
+            type="submit" 
+            className="btn btn-light btn-block"
+            disabled={loading}
+          >
+            {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
           </button>
         </form>
+        
         <hr className="bg-light" />
         <div className="text-center">Otras opciones de inicio de sesión</div>
         <div className="d-flex justify-content-around mt-2 p-2 bg-white" style={{ borderRadius: '10px' }}>

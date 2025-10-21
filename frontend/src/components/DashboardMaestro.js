@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios, { removeJWTToken } from '../axiosConfig';  // 🔴 CAMBIO: Importar removeJWTToken
 import { useNavigate } from 'react-router-dom';
 
 const DashboardMaestro = () => {
   const [asesorias, setAsesorias] = useState([]);
   const [error, setError] = useState('');
-  const [actualizar, setActualizar] = useState(false); // ✅ Estado para forzar actualización
+  const [actualizar, setActualizar] = useState(false);
   const navigate = useNavigate();
 
-  // Función para cargar asesorías (usada en useEffect)
+  // Función para cargar asesorías (sin cambios)
   const cargarAsesorias = () => {
-    axios.get('/api/dashboard_maestro', { withCredentials: true })
+    axios.get('/api/dashboard_maestro')
       .then(response => {
-        console.log("Datos actualizados recibidos:", response.data);  // 🔍 Depuración
+        console.log("Datos actualizados recibidos:", response.data);
         setAsesorias(Array.isArray(response.data.asesorias) ? response.data.asesorias : []);
       })
       .catch(err => {
@@ -24,34 +24,46 @@ const DashboardMaestro = () => {
   // Cargar asesorías al montar el componente y cuando se crea o elimina una asesoría
   useEffect(() => {
     cargarAsesorias();
-  }, [actualizar]); // ✅ Se ejecuta cada vez que `actualizar` cambia
+  }, [actualizar]);
 
-  // Manejo del cierre de sesión
+  // 🔴 CAMBIO: Función handleLogout actualizada para JWT
   const handleLogout = async () => {
     if (window.confirm("¿Deseas cerrar sesión?")) {
       try {
-        await axios.post('/api/logout', {}, { withCredentials: true });  // ✅ Cierra sesión en Flask
-        console.log("Sesión cerrada correctamente.");  // 🔍 Depuración
-        setAsesorias([]);  // ✅ Limpia asesorías al cerrar sesión
-        navigate('/login');  // ✅ Redirige al login
+        // 1. Llamar al endpoint de logout
+        await axios.post('/api/logout', {});
+        
+        // 2. IMPORTANTE: Eliminar el JWT token del localStorage
+        removeJWTToken();
+        
+        console.log("Sesión cerrada correctamente.");
+        
+        // 3. Limpiar el estado local
+        setAsesorias([]);
+        
+        // 4. Redirigir al login
+        navigate('/login');
       } catch (err) {
         console.error("Error al cerrar sesión:", err);
+        
+        // IMPORTANTE: Incluso si hay error, eliminar token y redirigir
+        removeJWTToken();
+        navigate('/login');
       }
     }
   };
 
-  // Manejo de eliminación de asesorías
-const handleDelete = (id) => {
-  if (window.confirm("¿Estás seguro de que quieres eliminar esta asesoría?")) {
-    axios.delete(`/api/borrar_asesoria/${id}`, { withCredentials: true })  // ✅ Usa DELETE en lugar de POST
-      .then(() => {
-        console.log(`Asesoría ${id} eliminada correctamente.`);  // 🔍 Depuración
-        setActualizar(!actualizar);  // ✅ Fuerza la recarga de asesorías
-      })
-      .catch(() => alert("Error al eliminar la asesoría."));
-  }
-};
-
+  // Manejo de eliminación de asesorías (sin cambios)
+  const handleDelete = (id) => {
+    if (window.confirm("¿Estás seguro de que quieres eliminar esta asesoría?")) {
+      axios.delete(`/api/borrar_asesoria/${id}`)
+        .then(() => {
+          console.log(`Asesoría ${id} eliminada correctamente.`);
+          setActualizar(!actualizar);
+        })
+        .catch(() => alert("Error al eliminar la asesoría."));
+    }
+  };
 
   return (
     <>
@@ -106,8 +118,7 @@ const handleDelete = (id) => {
                           <button 
                             className="btn btn-info btn-sm"
                             onClick={() => navigate(`/ver_detalle_asesoria_maestro/${id}`)}
-
-                            >
+                          >
                             Ver Detalles
                           </button>
 
