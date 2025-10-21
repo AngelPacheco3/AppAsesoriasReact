@@ -10,25 +10,32 @@ from flask_cors import CORS
 from bleach import clean
 from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
 from argon2 import PasswordHasher, exceptions as argon2_exceptions
-# Agregar estas líneas después de las importaciones existentes
 from werkzeug.utils import secure_filename
-from flask import abort 
+from flask import abort, send_from_directory
 import jwt
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+# --- NUEVO: Importar la librería para cargar el archivo .env ---
+from dotenv import load_dotenv
+
+# --- NUEVO: Cargar las variables de entorno del archivo .env al inicio de la app ---
+load_dotenv()
 
 # Configuración de la aplicación
-# Para la prevencion de inyeccopnes SQL/JS ya teniamos SQLAlchemy que previene de inyecciones SQL y Flask-Login
 app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///asesorias.db'
-app.config['SECRET_KEY'] = 'tu_clave_secreta'
+# --- MODIFICADO: Ahora las configuraciones se leen desde las variables de entorno ---
+# Se utiliza os.getenv('NOMBRE_DE_LA_VARIABLE', 'valor_por_defecto')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+
+# --- El resto de la configuración se mantiene ---
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
 app.config['WTF_CSRF_ENABLED'] = True
-app.config['JWT_SECRET_KEY'] = 'tu-clave-secreta-jwt-super-segura'  # Cambiar en producción
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)  # Token válido por 24 horas
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 app.config['JWT_ALGORITHM'] = 'HS256'
 
 
@@ -44,7 +51,11 @@ csrf = CSRFProtect(app)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
-app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2MB máximo
+
+# --- INICIO DE LA MODIFICACIÓN (SOLUCIÓN DEL ERROR 413) ---
+# Se aumenta el límite de tamaño de archivo de 2MB a 16MB para permitir fotos de perfil más grandes.
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB máximo
+# --- FIN DE LA MODIFICACIÓN ---
 
 # Crear directorio de uploads si no existe
 # Por esto:
@@ -62,7 +73,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 #login_manager = LoginManager(app)
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
 
 @app.after_request
 def set_security_headers(response):
@@ -253,8 +264,10 @@ def allowed_file(filename):
 # def load_user(user_id):
 #     return User.query.get(int(user_id))
 
-with app.app_context():
-    db.create_all()
+# --- MODIFICACIÓN IMPORTANTE ---
+# El bloque `with app.app_context(): db.create_all()` ha sido eliminado.
+# La creación de tablas ahora se maneja exclusivamente con los comandos de Flask-Migrate.
+# --- FIN DE LA MODIFICACIÓN ---
 
 #Login y registro de usuarios
 #Se verifica que exista el usuario.
@@ -296,9 +309,9 @@ def login_api():
         token = generate_jwt_token(user)
         
         if user.rol == 'alumno':
-            redirect_url = "/api/dashboard_alumno"
+            redirect_url = "/dashboard_alumno"
         elif user.rol == 'maestro':
-            redirect_url = "/api/dashboard_maestro"
+            redirect_url = "/dashboard_maestro"
         else:
             redirect_url = "/"
             
@@ -350,7 +363,7 @@ def verify_token():
 def registro_maestro_api():
     try:
         # Para el registro de maestro con archivo, se asume el envío en multipart/form-data:
-        data = request.get_json() if request.is_json else request.form.to_dict()
+        data = request.form
         if not data:
             return jsonify({"error": "Datos no proporcionados"}), 400
         
@@ -755,15 +768,10 @@ def ver_asesorias_totales_api():
 @jwt_required  # Cambiado de @login_required
 def borrar_asesoria_api(id):
     current_user = request.current_user  # NUEVO
-    # Verificar token CSRF
-    data = request.get_json() if request.is_json else request.args
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
-
     asesoria = Asesoria.query.get_or_404(id)
+    if asesoria.maestro_id != current_user.id:
+        return jsonify({"error": "No tienes permiso para esta acción"}), 403
+
     try:
         RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id).delete()
         db.session.delete(asesoria)
@@ -795,12 +803,7 @@ def editar_asesoria_api(id):
         })
     
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
-
+    
     # Sanitizar campos antes de actualizar
     asesoria.descripcion = clean(data.get('descripcion', asesoria.descripcion), strip=True)
     asesoria.temas = clean(data.get('temas', asesoria.temas), strip=True)
@@ -830,6 +833,9 @@ def ver_detalle_asesoria_maestro_dup(id):
 def ver_detalle_asesoria_maestro_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
+    if asesoria.maestro_id != current_user.id:
+        return jsonify({"error": "No autorizado"}), 403
+    
     maestro = User.query.get(asesoria.maestro_id)
     alumnos = db.session.query(User).join(RegistroAsesoria)\
         .filter(RegistroAsesoria.asesoria_id == asesoria.id).all()
@@ -859,6 +865,5 @@ def ver_detalle_asesoria_maestro_api(id):
 
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run(debug=True, port=5000)
+
