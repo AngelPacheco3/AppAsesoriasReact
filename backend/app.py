@@ -73,7 +73,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 #login_manager = LoginManager(app)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
+front_public = os.getenv('FRONT_PUBLIC_URL', 'https://charitable-prohibited-courtesy-poker.trycloudflare.com')
+CORS(app, supports_credentials=True, origins=["http://localhost:3000", front_public])
 
 @app.after_request
 def set_security_headers(response):
