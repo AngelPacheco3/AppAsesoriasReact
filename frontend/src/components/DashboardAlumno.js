@@ -1,59 +1,57 @@
 import React, { useState, useEffect } from 'react';
-// IMPORTANTE: Importar removeJWTToken junto con axios
-import axios, { removeJWTToken } from '../axiosConfig';  // ← CAMBIO AQUÍ
+// Asegúrate de que esta ruta '../axiosConfig' sea correcta para tu estructura de carpetas
+import axios, { removeJWTToken } from '../axiosConfig'; 
 import { useNavigate } from 'react-router-dom';
 
 const DashboardAlumno = () => {
   const [asesorias, setAsesorias] = useState([]);
   const [error, setError] = useState('');
-  const [actualizar, setActualizar] = useState(false);
+  const [actualizar, setActualizar] = useState(false); // Estado para forzar actualización
   const navigate = useNavigate();
 
-  // Función para cargar asesorías (sin cambios)
+  // Función para cargar asesorías
   const cargarAsesorias = () => {
     axios.get('/api/dashboard_alumno')
       .then(response => {
-        console.log("Datos actualizados recibidos:", response.data);
+        console.log("Asesorías disponibles recibidas:", response.data);
+        // Asegurarse de que response.data.asesorias es un array
         setAsesorias(Array.isArray(response.data.asesorias) ? response.data.asesorias : []);
+        setError(''); // Limpiar errores previos
       })
       .catch(err => {
         console.error("Error al cargar asesorías:", err);
-        setError('Error al cargar las asesorías.');
+        setError('Error al cargar las asesorías disponibles.');
+        setAsesorias([]); // Limpiar asesorías en caso de error
       });
   };
 
+  // Cargar asesorías al montar y al actualizar
   useEffect(() => {
     cargarAsesorias();
-  }, [actualizar]);
+  }, [actualizar]); // Se ejecuta cuando 'actualizar' cambia
 
-  // 🔴 FUNCIÓN handleLogout ACTUALIZADA PARA JWT
+  // Función de Logout (sin cambios respecto a tu código anterior)
   const handleLogout = async () => {
     if (window.confirm("¿Deseas cerrar sesión?")) {
       try {
-        // 1. Llamar al endpoint de logout (opcional con JWT)
         await axios.post('/api/logout', {});
-        
-        // 2. IMPORTANTE: Eliminar el JWT token del localStorage
         removeJWTToken();
-        
         console.log("Sesión cerrada correctamente.");
-        
-        // 3. Limpiar el estado local
         setAsesorias([]);
-        
-        // 4. Redirigir al login
         navigate('/login');
       } catch (err) {
         console.error("Error al cerrar sesión:", err);
-        
-        // IMPORTANTE: Incluso si hay error, eliminar token y redirigir
-        removeJWTToken();
+        removeJWTToken(); // Asegurar limpieza incluso con error
         navigate('/login');
       }
     }
   };
 
-  // Resto del componente sin cambios...
+  // Navegar a ver detalles
+  const handleVerDetalles = (id) => {
+    navigate(`/ver_detalle_asesoria/${id}`); // O la ruta correcta que uses
+  };
+
   return (
     <>
       {/* Navbar */}
@@ -68,7 +66,7 @@ const DashboardAlumno = () => {
         </div>
       </nav>
 
-      {/* Contenedor principal */}
+      {/* Contenedor Principal */}
       <div className="container mt-4">
         <div className="card shadow-lg">
           <div className="card-body">
@@ -77,43 +75,48 @@ const DashboardAlumno = () => {
             {error ? (
               <p className="text-danger text-center">{error}</p>
             ) : (
-              <table className="table table-striped table-hover">
-                <thead className="thead-dark">
-                  <tr>
-                    <th>Descripción</th>
-                    <th>Costo</th>
-                    <th>Máximo de Alumnos</th>
-                    <th>Temas</th>
-                    <th>Maestro</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {asesorias.length === 0 ? (
+              // --- ✅ INICIO DE LA MODIFICACIÓN ---
+              // Envolver la tabla con table-responsive
+              <div className="table-responsive">
+                <table className="table table-striped table-hover">
+                  <thead className="thead-dark">
                     <tr>
-                      <td colSpan="6" className="text-center">No hay asesorías disponibles.</td>
+                      <th>Descripción</th>
+                      <th>Costo</th>
+                      <th>Máximo de Alumnos</th>
+                      <th>Temas</th>
+                      <th>Maestro</th>
+                      <th>Acciones</th>
                     </tr>
-                  ) : (
-                    asesorias.map(({ id, descripcion, costo, max_alumnos, temas, maestro }) => (
-                      <tr key={id}>
-                        <td>{descripcion}</td>
-                        <td>{costo}</td>
-                        <td>{max_alumnos}</td>
-                        <td>{temas}</td>
-                        <td>{maestro?.nombre}</td>
-                        <td>
-                          <button 
-                            className="btn btn-info btn-sm"
-                            onClick={() => navigate(`/ver_asesoria/${id}`)}  // ✅ Redirige a VerAsesoria.js
-                          >
-                            Ver Detalles
-                          </button>
-                        </td>
+                  </thead>
+                  <tbody>
+                    {asesorias.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="text-center">No hay asesorías disponibles en este momento.</td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      asesorias.map(({ id, descripcion, costo, max_alumnos, temas, maestro }) => (
+                        <tr key={id}>
+                          <td>{descripcion}</td>
+                          <td>${costo ? costo.toFixed(2) : 'N/A'}</td> {/* Asegurar que costo sea número */}
+                          <td>{max_alumnos}</td>
+                          <td>{temas}</td>
+                          <td>{maestro?.nombre || 'N/A'}</td> {/* Acceso seguro al nombre */}
+                          <td>
+                            <button
+                              className="btn btn-info btn-sm"
+                              onClick={() => handleVerDetalles(id)}
+                            >
+                              Ver Detalles
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              // --- ✅ FIN DE LA MODIFICACIÓN ---
             )}
 
             {/* Botón para actualizar manualmente */}
@@ -122,9 +125,10 @@ const DashboardAlumno = () => {
                 🔄 Actualizar Asesorías
               </button>
             </div>
-          </div>
-        </div>
-      </div>
+
+          </div> {/* Fin card-body */}
+        </div> {/* Fin card */}
+      </div> {/* Fin container */}
     </>
   );
 };

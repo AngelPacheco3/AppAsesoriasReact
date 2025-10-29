@@ -158,3 +158,40 @@ hr.bg-light {
     border: none; /* Sin borde */
     height: 1px; /* Altura de 1px */
 }
+/* En tu archivo CSS (style.css o similar) */
+
+/* Estilos base para la tabla */
+.mi-tabla-responsiva { /* ... tus estilos normales ... */ }
+
+@media (max-width: 768px) { /* Estilos para pantallas pequeñas (ej. celulares) */
+  .mi-tabla-responsiva thead {
+    display: none; /* Ocultar encabezados */
+  }
+  .mi-tabla-responsiva tr {
+    display: block; /* Convertir filas en bloques */
+    margin-bottom: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 0.25rem;
+  }
+  .mi-tabla-responsiva td {
+    display: block; /* Convertir celdas en bloques */
+    text-align: right; /* Alinear texto a la derecha */
+    position: relative;
+    padding-left: 50%; /* Espacio para la etiqueta */
+    border-bottom: 1px solid #eee;
+  }
+  .mi-tabla-responsiva td::before {
+    /* Usar el atributo data-label para mostrar la etiqueta */
+    content: attr(data-label);
+    position: absolute;
+    left: 0.5rem;
+    width: 45%;
+    padding-right: 0.5rem;
+    text-align: left;
+    font-weight: bold;
+  }
+  /* Ocultar la última línea divisoria */
+  .mi-tabla-responsiva td:last-child {
+      border-bottom: 0;
+  }
+}
