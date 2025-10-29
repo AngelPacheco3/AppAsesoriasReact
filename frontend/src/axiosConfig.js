@@ -1,6 +1,12 @@
 // axiosConfig.js - Versión con JWT y CSRF
 import axios from 'axios';
 
+// ✅ LÍNEA A AÑADIR: Establece la URL base para todas las peticiones de axios
+axios.defaults.baseURL = process.env.REACT_APP_API_URL;
+
+// Configurar axios con credenciales
+axios.defaults.withCredentials = true;
+
 // Configurar axios con credenciales
 axios.defaults.withCredentials = true;
 

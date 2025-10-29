@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case
 import os
 import logging
-from flask_cors import CORS
+from flask_cors import CORS # Asegúrate de que esta importación esté
 from bleach import clean
 from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
 from argon2 import PasswordHasher, exceptions as argon2_exceptions
@@ -73,8 +73,24 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 #login_manager = LoginManager(app)
-front_public = os.getenv('FRONT_PUBLIC_URL', 'https://charitable-prohibited-courtesy-poker.trycloudflare.com')
-CORS(app, supports_credentials=True, origins=["http://localhost:3000", front_public])
+
+# --- ✅ CONFIGURACIÓN DE CORS PARA PRODUCCIÓN ---
+# Obtenemos la URL del frontend desde el archivo .env
+front_public_url = os.getenv('FRONT_PUBLIC_URL')
+
+# Creamos una lista de los orígenes permitidos
+allowed_origins = [
+    "http://localhost:3000"  # Para tus pruebas en local
+]
+
+# Si la URL pública existe en el .env, la añadimos a la lista
+if front_public_url:
+    allowed_origins.append(front_public_url)
+
+# Inicializamos CORS con la lista de orígenes permitidos
+CORS(app, supports_credentials=True, origins=allowed_origins)
+# --- FIN DE LA CONFIGURACIÓN DE CORS ---
+
 
 @app.after_request
 def set_security_headers(response):
@@ -82,21 +98,21 @@ def set_security_headers(response):
     Agrega encabezados de seguridad HTTP a todas las respuestas
     para proteger contra diversos tipos de ataques web.
     """
-    
+
     # 1. Previene que la página sea embebida en frames (protege contra clickjacking)
     response.headers['X-Frame-Options'] = 'DENY'
-    
+
     # 2. Previene que el navegador detecte automáticamente el tipo de contenido
     # (protege contra ataques MIME-type sniffing)
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    
+
     # 3. Habilita el filtro XSS del navegador (legacy, pero útil para navegadores antiguos)
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    
+
     # 4. Controla qué información se envía en el header Referer
     # 'strict-origin-when-cross-origin' envía el origen completo solo en mismo origen
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    
+
     # 5. Content Security Policy - Controla qué recursos puede cargar la página
     # Esta es una política básica que permite recursos del mismo origen
     csp = (
@@ -105,13 +121,13 @@ def set_security_headers(response):
         "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "  # Estilos
         "font-src 'self' https://cdnjs.cloudflare.com; "  # Fuentes
         "img-src 'self' data: https: blob:; "  # Imágenes
-        "connect-src 'self' http://localhost:* ws://localhost:*; "  # Conexiones AJAX/WebSocket
+        f"connect-src 'self' http://localhost:* ws://localhost:* {front_public_url or ''}; " # Conexiones AJAX/WebSocket (Añadido front_public_url)
         "frame-ancestors 'none'; "  # Previene embedding
         "form-action 'self'; "  # Formularios solo al mismo origen
         "base-uri 'self';"  # Restricción de <base> tag
     )
     response.headers['Content-Security-Policy'] = csp
-    
+
     # 6. Permissions Policy (antes Feature Policy) - Controla qué APIs del navegador puede usar
     permissions = (
         "accelerometer=(), "  # Desactiva acceso al acelerómetro
@@ -122,20 +138,20 @@ def set_security_headers(response):
         "usb=()"  # Desactiva acceso USB
     )
     response.headers['Permissions-Policy'] = permissions
-    
+
     # 7. SOLO para producción con HTTPS (comentado para desarrollo local)
     # Descomenta esta línea cuando uses HTTPS en producción:
     # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
-    
+
     # 8. Previene que el navegador haga MIME sniffing en las descargas
     response.headers['X-Download-Options'] = 'noopen'
-    
+
     # 9. DNS Prefetch Control - Controla cuándo el navegador hace prefetch de DNS
     response.headers['X-DNS-Prefetch-Control'] = 'off'
-    
+
     # 10. Previene que Adobe products abran el sitio
     response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
-    
+
     return response
 
 # MODELOS
@@ -194,7 +210,7 @@ def jwt_required(f):
     def decorated_function(*args, **kwargs):  # ← IMPORTANTE:args, kwargs
         token = None
 
-#Buscar token en headers,
+        #Buscar token en headers,
         if 'Authorization' in request.headers:
             auth_header = request.headers['Authorization']
             try:
@@ -213,17 +229,17 @@ def jwt_required(f):
         try:
             # Decodificar token
             payload = jwt.decode(
-                token, 
-                app.config['JWT_SECRET_KEY'], 
+                token,
+                app.config['JWT_SECRET_KEY'],
                 algorithms=[app.config['JWT_ALGORITHM']]
             )
 
-#Obtener usuario de la DB,
+            #Obtener usuario de la DB,
             user = User.query.get(payload['user_id'])
             if not user:
                 return jsonify({'error': 'User not found'}), 401
 
-#Pasar usuario a la función a través del request,
+            #Pasar usuario a la función a través del request,
             request.current_user = user
 
         except jwt.ExpiredSignatureError:
@@ -234,7 +250,7 @@ def jwt_required(f):
             app.logger.error(f"JWT Error: {str(e)}")
             return jsonify({'error': 'Token validation error'}), 401
 
-#Llamar a la función original con sus argumentos,
+        #Llamar a la función original con sus argumentos,
         return f(*args, **kwargs)  # ← IMPORTANTE: pasar los argumentos
 
     return decorated_function
@@ -244,13 +260,13 @@ def serve_image(filename):
     try:
         # Limpiar el nombre del archivo
         clean_filename = secure_filename(filename)
-        
+
         # Verificar que el archivo existe
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], clean_filename)
         if not os.path.exists(file_path):
             app.logger.error(f"Archivo no encontrado: {clean_filename}")
             abort(404)
-            
+
         return send_from_directory(app.config['UPLOAD_FOLDER'], clean_filename)
     except Exception as e:
         app.logger.error(f"Error al servir imagen: {str(e)}")
@@ -282,7 +298,7 @@ def login_api():
         data = request.get_json() if request.is_json else request.form.to_dict()
         if not data:
             return jsonify({"error": "Datos no proporcionados"}), 400
-        
+
         email = data.get('email', '').strip()
         password = data.get('password', '')
         if not email or not password:
@@ -308,14 +324,14 @@ def login_api():
 
         # NUEVO: Generar token JWT en lugar de usar login_user()
         token = generate_jwt_token(user)
-        
+
         if user.rol == 'alumno':
             redirect_url = "/dashboard_alumno"
         elif user.rol == 'maestro':
             redirect_url = "/dashboard_maestro"
         else:
             redirect_url = "/"
-            
+
         return jsonify({
             "message": "Inicio de sesión exitoso",
             "redirect": redirect_url,
@@ -327,7 +343,7 @@ def login_api():
                 "rol": user.rol
             }
         })
-        
+
     except Exception as e:
         app.logger.error(f"Error en login: {str(e)}")
         return jsonify({"error": "Error en el servidor"}), 500
@@ -367,7 +383,7 @@ def registro_maestro_api():
         data = request.form
         if not data:
             return jsonify({"error": "Datos no proporcionados"}), 400
-        
+
         # Validación básica de campos
         required_fields = ['nombre', 'email', 'password', 'confirm_password']
         if not all(field in data for field in required_fields):
@@ -398,7 +414,7 @@ def registro_maestro_api():
             edad=int(data.get('edad', 0)) if data.get('edad', '').isdigit() else None,
             nivel=clean(data.get('nivel', ''), strip=True)
         )
-        
+
         # Manejo del archivo, si está enviado
         foto_filename = None
         if 'foto' in request.files:
@@ -413,13 +429,13 @@ def registro_maestro_api():
 
         db.session.add(nuevo_maestro)
         db.session.commit()
-        
+
         app.logger.info(f"Maestro registrado: {email}")
         return jsonify({
             "message": "Maestro registrado con éxito",
             "redirect": "/api/login"
         })
-        
+
     except IntegrityError as e:
         db.session.rollback()
         app.logger.error(f"Error de integridad en registro: {str(e)}")
@@ -440,19 +456,19 @@ def registro_alumno_api():
         data = request.get_json() if request.is_json else request.form.to_dict()
         if not data:
             return jsonify({"error": "Datos no proporcionados"}), 400
-        
+
         required_fields = ['nombre', 'email', 'password', 'confirm_password']
         if not all(field in data for field in required_fields):
             return jsonify({"error": "Faltan campos requeridos"}), 400
-        
+
         nombre = clean(data.get('nombre', ''), strip=True)
         email = clean(data.get('email', ''), strip=True)
         password = data.get('password', '')
         confirm_password = data.get('confirm_password', '')
-        
+
         if password != confirm_password:
             return jsonify({"error": "Las contraseñas no coinciden"}), 400
-        
+
         if User.query.filter_by(email=email).first():
             return jsonify({"error": "El correo ya está registrado"}), 409
 
@@ -463,16 +479,16 @@ def registro_alumno_api():
             password_hash=password_hash,  # Guarda el hash en el campo password_hash
             rol='alumno'
         )
-        
+
         db.session.add(nuevo_alumno)
         db.session.commit()
         app.logger.info(f"Alumno registrado: {email}")
-        
+
         return jsonify({
             "message": "Alumno registrado con éxito",
             "redirect": "/api/login"
         })
-        
+
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error en registro alumno: {str(e)}")
@@ -603,11 +619,11 @@ def procesar_pago_api(id):
 def nueva_asesoria_api():
     current_user = request.current_user  # NUEVO
     data = request.get_json() if request.is_json else request.form.to_dict()
-    
+
     # Sanitizar campos de texto
     data['descripcion'] = clean(data.get('descripcion', ''), strip=True)
     data['temas'] = clean(data.get('temas', ''), strip=True)
-    
+
     nueva_asesoria = Asesoria(
         descripcion=data['descripcion'],
         costo=data.get('costo'),
@@ -703,10 +719,10 @@ def ver_detalle_asesoria_api(id):
     try:
         asesoria = Asesoria.query.get_or_404(id)
         maestro = User.query.get(asesoria.maestro_id)
-        
+
         # Construir la ruta relativa para el frontend
         foto_path = f"/images/{maestro.foto}" if maestro.foto else None
-        
+
         alumnos = db.session.query(User).join(RegistroAsesoria)\
             .filter(RegistroAsesoria.asesoria_id == asesoria.id).all()
 
@@ -715,7 +731,7 @@ def ver_detalle_asesoria_api(id):
         ).filter(RegistroAsesoria.asesoria_id == asesoria.id).scalar() or 0.0
 
         registro = RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id, alumno_id=current_user.id).first()
-        
+
         data = {
             "asesoria": {
                 "id": asesoria.id,
@@ -738,7 +754,7 @@ def ver_detalle_asesoria_api(id):
             "pagado": registro.pagado if registro else False
         }
         return jsonify(data)
-        
+
     except Exception as e:
         app.logger.error(f"Error al obtener detalles de asesoría: {str(e)}")
         return jsonify({"error": "Error al cargar los detalles"}), 500
@@ -802,9 +818,9 @@ def editar_asesoria_api(id):
                 "meet_link": asesoria.meet_link
             }
         })
-    
+
     data = request.get_json() if request.is_json else request.form.to_dict()
-    
+
     # Sanitizar campos antes de actualizar
     asesoria.descripcion = clean(data.get('descripcion', asesoria.descripcion), strip=True)
     asesoria.temas = clean(data.get('temas', asesoria.temas), strip=True)
@@ -836,7 +852,7 @@ def ver_detalle_asesoria_maestro_api(id):
     asesoria = Asesoria.query.get_or_404(id)
     if asesoria.maestro_id != current_user.id:
         return jsonify({"error": "No autorizado"}), 403
-    
+
     maestro = User.query.get(asesoria.maestro_id)
     alumnos = db.session.query(User).join(RegistroAsesoria)\
         .filter(RegistroAsesoria.asesoria_id == asesoria.id).all()
@@ -867,4 +883,4 @@ def ver_detalle_asesoria_maestro_api(id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
+    
