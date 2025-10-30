@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 Archivos de base de datos de desarrollo
 
 *.sqlite

@@ -1,13 +1,9 @@
-// axiosConfig.js - Versión con JWT y CSRF
 import axios from 'axios';
+// ✅ NUEVA IMPORTACIÓN
+import { jwtDecode } from 'jwt-decode';
 
-// ✅ LÍNEA A AÑADIR: Establece la URL base para todas las peticiones de axios
+// Configurar axios con credenciales
 axios.defaults.baseURL = process.env.REACT_APP_API_URL;
-
-// Configurar axios con credenciales
-axios.defaults.withCredentials = true;
-
-// Configurar axios con credenciales
 axios.defaults.withCredentials = true;
 
 // Variables para tokens
@@ -27,6 +23,25 @@ export const saveJWTToken = (token) => {
 export const removeJWTToken = () => {
   localStorage.removeItem('jwt_token');
 };
+
+// --- ✅ NUEVA FUNCIÓN PARA OBTENER DATOS DEL TOKEN ---
+export const getUserData = () => {
+  const token = getJWTToken();
+  if (!token) {
+    return null; // No hay usuario logueado
+  }
+  try {
+    // Decodificar el token para obtener el payload (id, rol, nombre, etc.)
+    const decoded = jwtDecode(token);
+    return decoded;
+  } catch (error) {
+    console.error("Token inválido o expirado:", error);
+    removeJWTToken(); // Limpiar token inválido
+    return null;
+  }
+};
+// --- FIN DE LA NUEVA FUNCIÓN ---
+
 
 // Función para obtener el token CSRF del backend
 const fetchCSRFToken = async () => {
@@ -78,14 +93,17 @@ axios.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     
-    // Si el error es por token JWT expirado
-    if (error.response?.status === 401 && error.response?.data?.error === 'Token expired') {
-      // Eliminar token expirado
-      removeJWTToken();
-      
-      // Redireccionar al login
-      window.location.href = '/login';
-      return Promise.reject(error);
+    // Si el error es por token JWT expirado o inválido (401)
+    if (error.response?.status === 401 && !originalRequest._retry) {
+       originalRequest._retry = true; // Prevenir bucles infinitos
+       
+       console.warn("Token expirado o inválido. Redirigiendo al login.");
+       removeJWTToken(); // Eliminar token expirado
+       
+       // Redireccionar al login
+       // Usamos window.location para forzar recarga completa y limpiar estado
+       window.location.href = '/login';
+       return Promise.reject(error);
     }
     
     // Si el error es por CSRF token inválido
@@ -104,12 +122,6 @@ axios.interceptors.response.use(
         // Reintentar la petición
         return axios(originalRequest);
       }
-    }
-    
-    // Si es error 401 genérico (no autenticado)
-    if (error.response?.status === 401) {
-      removeJWTToken();
-      window.location.href = '/login';
     }
     
     return Promise.reject(error);

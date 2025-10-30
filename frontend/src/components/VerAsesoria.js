@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from '../axiosConfig';  // o '../axiosConfig' según la ubicación
+// Asegúrate que la ruta a axiosConfig sea correcta
+import axios from '../axiosConfig'; 
 
 const VerAsesoria = () => {
   const { id } = useParams();
@@ -15,48 +16,38 @@ const VerAsesoria = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Configuración de la API
-  const API_BASE_URL = 'http://localhost:5000';
-
-// const imageUrl = maestro.foto 
-//   ? `${API_BASE_URL}/images/${maestro.foto}`
-//   : 'https://via.placeholder.com/150';
-  // Efecto para actualizar estado de inscripción
-  useEffect(() => {
-    console.log("Estado de inscripción actualizado:", registrado, pagado);
-    setRegistrado(registrado);
-    setPagado(pagado);
-  }, [registrado, pagado]);
-
   // Efecto para cargar datos de la asesoría
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
-        const response = await axios.get(`${API_BASE_URL}/api/ver_detalle_asesoria/${id}`, {
-          withCredentials: true
+        setError(null); 
+
+        // --- ✅ CORRECCIÓN: Llamada a la API de alumno correcta (relativa) ---
+        const response = await axios.get(`/api/ver_asesoria/${id}`, {
+          withCredentials: true 
         });
         
         if (!response.data) {
           throw new Error('No se recibieron datos de la asesoría');
         }
 
-        const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado, pagado } = response.data;
+        const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado: regStatus, pagado: pagStatus } = response.data;
         
-        // Construir objeto maestro con URL de foto
         const maestroConFoto = {
           ...maestroData,
+          // --- ✅ CORRECCIÓN: Usar la baseURL de axios para construir la URL de la imagen ---
+          // Asumiendo que maestroData.foto es solo el nombre del archivo (ej: "mi_foto.jpg")
           fotoUrl: maestroData.foto 
-            ? `${API_BASE_URL}/images/${maestroData.foto.replace(/^\/+/, '')}`
-            : 'https://via.placeholder.com/150'
+            ? `${axios.defaults.baseURL}/images/${maestroData.foto.replace(/^\/+/, '')}` // Usa la URL base de axios
+            : 'https://via.placeholder.com/150' 
         };
         
         setAsesoria(asesoriaData);
         setMaestro(maestroConFoto);
         setAlumnos(alumnosData || []);
-        setRegistrado(registrado || false);
-        setPagado(pagado || false);
+        setRegistrado(regStatus || false);
+        setPagado(pagStatus || false);
 
       } catch (err) {
         console.error("Error al cargar datos:", err);
@@ -70,8 +61,9 @@ const VerAsesoria = () => {
       }
     };
 
-    fetchData();
-  }, [id]);
+     fetchData();
+
+  }, [id]); // Dependencia solo del ID
 
   if (loading) {
     return (
@@ -92,9 +84,9 @@ const VerAsesoria = () => {
           <p>{error}</p>
           <button 
             className="btn btn-secondary" 
-            onClick={() => window.location.reload()}
+             onClick={() => navigate('/dashboard_alumno')} 
           >
-            Reintentar
+             Volver al Dashboard
           </button>
         </div>
       </div>
@@ -118,7 +110,7 @@ const VerAsesoria = () => {
           className="btn btn-outline-light"
           onClick={() => navigate('/dashboard_alumno')}
         >
-          &larr;
+          &larr; Volver
         </button>
         <span className="navbar-brand mx-auto">Detalles de la Asesoría</span>
       </nav>
@@ -132,7 +124,7 @@ const VerAsesoria = () => {
           <div className="row mb-3">
             <div className="col-md-6">
               <h4>Detalles de la Asesoría</h4>
-              <p><strong>Costo:</strong> ${asesoria.costo}</p>
+              <p><strong>Costo:</strong> ${asesoria.costo ? asesoria.costo.toFixed(2) : 'N/A'}</p>
               <p><strong>Cupo:</strong> {alumnos.length}/{asesoria.max_alumnos} alumnos</p>
               <p><strong>Temas:</strong> {asesoria.temas}</p>
             </div>
@@ -142,7 +134,7 @@ const VerAsesoria = () => {
               <p><strong>Nombre:</strong> {maestro?.nombre}</p>
               <p><strong>Email:</strong> {maestro?.email}</p>
               <img
-                src={maestro?.fotoUrl}
+                src={maestro?.fotoUrl} // Usar la URL construida
                 alt={`Foto de ${maestro?.nombre || 'maestro'}`}
                 className="img-fluid rounded-circle mt-2"
                 style={{ 
@@ -153,7 +145,7 @@ const VerAsesoria = () => {
                 }}
                 onError={(e) => {
                   e.target.onerror = null; 
-                  e.target.src = 'https://via.placeholder.com/150';
+                  e.target.src = 'https://via.placeholder.com/150'; 
                 }}
               />
             </div>
@@ -163,40 +155,16 @@ const VerAsesoria = () => {
           
           <div className="mb-4">
             <h4>Alumnos Registrados</h4>
-            {alumnos.length > 0 ? (
-              <div className="table-responsive">
-                <table className="table table-striped">
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Email</th>
-                      <th>Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alumnos.map((alumno) => (
-                      <tr key={alumno.id}>
-                        <td>{alumno.nombre}</td>
-                        <td>{alumno.email}</td>
-                        <td>
-                          {alumno.pagado ? (
-                            <span className="badge bg-success">Pagado</span>
-                          ) : (
-                            <span className="badge bg-warning text-dark">Pendiente</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="alert alert-info">
-                No hay alumnos registrados en esta asesoría.
-              </div>
-            )}
+             {alumnos.length > 0 ? (
+                 <p>{alumnos.length} alumno(s) registrado(s).</p> 
+             ) : (
+               <div className="alert alert-info">
+                 No hay alumnos registrados en esta asesoría.
+               </div>
+             )}
           </div>
 
+          {/* Lógica de botones de acción */}
           {registrado && pagado && asesoria.meet_link ? (
             <div className="alert alert-success">
               <h5 className="alert-heading">¡Acceso a la asesoría!</h5>
@@ -215,7 +183,7 @@ const VerAsesoria = () => {
                   Unirse ahora
                 </button>
               </div>
-              <p className="mb-0"><small>Este enlace es personal e intransferible.</small></p>
+              <p className="mb-0"><small>Este enlace es personal.</small></p>
             </div>
           ) : registrado ? (
             <div className="alert alert-warning">
@@ -229,21 +197,27 @@ const VerAsesoria = () => {
               </button>
             </div>
           ) : (
-            <div className="d-grid gap-2">
-              <button
-                className="btn btn-primary btn-lg"
-                onClick={() => navigate(`/pago_asesoria/${asesoria.id}`)}
-              >
-                Registrarse y pagar
-              </button>
-            </div>
+            alumnos.length < asesoria.max_alumnos ? ( 
+                 <div className="d-grid gap-2">
+                   <button
+                     className="btn btn-primary btn-lg"
+                     onClick={() => navigate(`/pago_asesoria/${asesoria.id}`)} 
+                   >
+                     Registrarse y pagar (${asesoria.costo ? asesoria.costo.toFixed(2) : 'N/A'})
+                   </button>
+                 </div>
+            ) : (
+                 <div className="alert alert-secondary">
+                     Cupo lleno para esta asesoría.
+                 </div>
+            )
           )}
         </div>
         
         <div className="card-footer text-center">
           <button
             className="btn btn-outline-secondary"
-            onClick={() => navigate(-1)}
+            onClick={() => navigate(-1)} // Volver a la página anterior
           >
             Volver atrás
           </button>

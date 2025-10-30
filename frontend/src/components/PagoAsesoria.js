@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from '../axiosConfig';
+// Asegúrate que la ruta a axiosConfig sea correcta
+import axios from '../axiosConfig'; 
 import { useParams, useNavigate } from 'react-router-dom';
 
 const PagoAsesoria = () => {
@@ -13,15 +14,18 @@ const PagoAsesoria = () => {
     cvv: '',
     celular: ''
   });
-  const [csrfToken, setCsrfToken] = useState('');
+  
+  // --- ❌ SE ELIMINA LA LÓGICA MANUAL DE CSRF ---
+  // const [csrfToken, setCsrfToken] = useState(''); 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   // Obtener datos de la asesoría
   useEffect(() => {
+    // Usar la URL relativa, axiosConfig pondrá la base
     axios.get(`/api/ver_asesoria/${id}`)
       .then(response => {
-        setAsesoria(response.data);
+        setAsesoria(response.data.asesoria); // Ajustado para tomar el objeto asesoria
         setLoading(false);
       })
       .catch(() => {
@@ -30,12 +34,8 @@ const PagoAsesoria = () => {
       });
   }, [id]);
 
-  // Obtener el token CSRF al montar el componente
-  useEffect(() => {
-    axios.get('/api/csrf-token')
-      .then(res => setCsrfToken(res.data.csrfToken))
-      .catch(() => setError('No se pudo obtener el token CSRF'));
-  }, []);
+  // --- ❌ SE ELIMINA EL useEffect PARA OBTENER CSRF ---
+  // (axiosConfig.js lo hará automáticamente)
 
   const handleChange = (e) => {
     setFormData({
@@ -46,23 +46,40 @@ const PagoAsesoria = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setError(''); // Limpiar error previo
 
     if (formData.tarjeta.length !== 16) {
-      alert('El número de tarjeta debe contener 16 dígitos.');
+      setError('El número de tarjeta debe contener 16 dígitos.');
       return;
     }
+    
+    if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(formData.vencimiento)) {
+        setError('Formato de vencimiento debe ser MM/AA.');
+        return;
+    }
+    
+    if (!/^\d{3}$/.test(formData.cvv)) {
+        setError('El CVV debe contener 3 dígitos.');
+        return;
+    }
 
-    // Enviar los datos del formulario + csrfToken
-    axios.post(`/api/procesar_pago/${id}`, { ...formData, csrfToken })
+    // --- ✅ CORRECCIÓN: Enviar solo formData ---
+    // axiosConfig.js adjuntará automáticamente el token JWT
+    // y el token CSRF (en el header X-CSRFToken)
+    axios.post(`/api/procesar_pago/${id}`, formData)
       .then(() => {
         alert('Pago realizado con éxito.');
         navigate('/dashboard_alumno');
       })
-      .catch(() => setError('Error al procesar el pago.'));
+      .catch((err) => {
+        console.error("Error al procesar el pago:", err);
+        setError(err.response?.data?.error || 'Error al procesar el pago. Revisa tus datos.');
+      });
   };
 
   if (loading) return <p className="text-center mt-4">Cargando datos de la asesoría...</p>;
-  if (error) return <p className="text-danger text-center mt-4">{error}</p>;
+  // Mantener el error en pantalla si existe
+  // if (error) return <p className="text-danger text-center mt-4">{error}</p>;
 
   return (
     <div className="container-fluid">
@@ -77,10 +94,27 @@ const PagoAsesoria = () => {
       
       <div className="login-box mt-5">
         <h2 className="text-center mb-4">Datos de Pago</h2>
+        
+        {/* Mostrar error si existe */}
+        {error && (
+            <div className="alert alert-danger" role="alert">
+              <small>{error}</small>
+            </div>
+        )}
+
         <div className="alert alert-warning" role="alert">
           Los pagos se realizarán al instante y no se guardará ningún dato bancario.
         </div>
-        <h2 className="text-center mb-4">Pago para {asesoria?.descripcion}</h2>
+        
+        {/* Mostrar info de la asesoría */}
+        {asesoria ? (
+            <h4 className="text-center mb-4" style={{ color: 'white' }}>
+              Pago para: {asesoria.descripcion} (${asesoria.costo?.toFixed(2)})
+            </h4>
+        ) : (
+             <p className="text-center">Cargando detalles...</p>
+        )}
+        
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="nombre">Nombre del Propietario de la Tarjeta</label>

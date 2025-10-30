@@ -160,38 +160,74 @@ hr.bg-light {
 }
 /* En tu archivo CSS (style.css o similar) */
 
-/* Estilos base para la tabla */
-.mi-tabla-responsiva { /* ... tus estilos normales ... */ }
+/* --- Estilos SUPER ESPECÍFICOS para tabla responsiva en móviles --- */
 
-@media (max-width: 768px) { /* Estilos para pantallas pequeñas (ej. celulares) */
-  .mi-tabla-responsiva thead {
-    display: none; /* Ocultar encabezados */
-  }
-  .mi-tabla-responsiva tr {
-    display: block; /* Convertir filas en bloques */
-    margin-bottom: 1rem;
-    border: 1px solid #ddd;
-    border-radius: 0.25rem;
-  }
-  .mi-tabla-responsiva td {
-    display: block; /* Convertir celdas en bloques */
-    text-align: right; /* Alinear texto a la derecha */
-    position: relative;
-    padding-left: 50%; /* Espacio para la etiqueta */
-    border-bottom: 1px solid #eee;
-  }
-  .mi-tabla-responsiva td::before {
-    /* Usar el atributo data-label para mostrar la etiqueta */
-    content: attr(data-label);
-    position: absolute;
-    left: 0.5rem;
-    width: 45%;
-    padding-right: 0.5rem;
-    text-align: left;
-    font-weight: bold;
-  }
-  /* Ocultar la última línea divisoria */
-  .mi-tabla-responsiva td:last-child {
-      border-bottom: 0;
-  }
+/* Aplicar solo en pantallas de 768px o menos */
+@media (max-width: 768px) {
+    
+    /* Seleccionar tabla DENTRO del div .card-body y .table-responsive */
+    .card-body .table-responsive > .table {
+        border: 0 !important; 
+        width: 100% !important; /* Asegurar ancho completo */
+        background-color: transparent !important; /* Quitar fondo de tabla si existe */
+    }
+
+    /* Ocultar encabezado original */
+    .card-body .table-responsive > .table > thead {
+        display: none !important; /* Ocultar completamente */
+    }
+
+    /* Estilo para cada fila (será una tarjeta) */
+    .card-body .table-responsive > .table > tbody > tr {
+        display: block !important; /* Forzar bloque */
+        width: 100% !important; /* Ancho completo */
+        margin-bottom: 1.5rem !important; /* Espacio entre tarjetas */
+        border: 1px solid #dee2e6 !important; /* Borde */
+        border-radius: .3rem !important; /* Bordes redondeados */
+        background-color: #ffffff !important; /* Fondo blanco */
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important; /* Sombra ligera */
+        color: #495057 !important; /* Texto un poco más oscuro */
+    }
+
+    /* Estilo para cada celda (será un campo dentro de la tarjeta) */
+    .card-body .table-responsive > .table > tbody > tr > td {
+        display: block !important; /* Forzar bloque */
+        width: 100% !important; /* Ancho completo */
+        padding: .75rem .75rem .75rem 50% !important; /* Padding: top right bottom left(50%) */
+        position: relative !important;
+        text-align: right !important; /* Alinear valor a la derecha */
+        font-size: 0.9em !important; /* Tamaño de fuente */
+        border: none !important; /* Quitar bordes internos de celda */
+        border-bottom: 1px solid #e9ecef !important; /* Separador ligero */
+    }
+
+    /* Quitar borde inferior de la última celda */
+    .card-body .table-responsive > .table > tbody > tr > td:last-child {
+        border-bottom: 0 !important;
+    }
+
+    /* Etiqueta (Label) usando el data-label */
+    .card-body .table-responsive > .table > tbody > tr > td::before {
+        content: attr(data-label) !important; /* Mostrar etiqueta */
+        position: absolute !important;
+        top: 50% !important; /* Centrar verticalmente */
+        transform: translateY(-50%) !important; /* Ajuste fino vertical */
+        left: .75rem !important; /* Margen izquierdo */
+        width: 40% !important; /* Ancho etiqueta */
+        padding-right: .5rem !important; /* Espacio */
+        white-space: nowrap !important;
+        text-align: left !important; /* Alinear etiqueta a la izquierda */
+        font-weight: bold !important;
+        color: #007bff !important; /* Color azul */
+    }
+
+    /* Estilos específicos para la celda de Acciones */
+    .card-body .table-responsive > .table > tbody > tr > td[data-label="Acciones"] {
+        text-align: center !important; /* Centrar contenido */
+        padding-left: .75rem !important; /* Resetear padding izquierdo */
+    }
+     .card-body .table-responsive > .table > tbody > tr > td[data-label="Acciones"] button {
+        /* Estilos del botón si es necesario */
+        margin: 0.2rem auto !important; /* Centrar botón si es display block */
+     }
 }
