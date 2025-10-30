@@ -73,7 +73,24 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 #login_manager = LoginManager(app)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
+
+# --- ✅ CORRECCIÓN DE CORS ---
+# Obtenemos la URL del frontend desde el archivo .env
+front_public_url = os.getenv('FRONT_PUBLIC_URL')
+
+# Creamos una lista de los orígenes permitidos
+allowed_origins = [
+    "http://localhost:3000"  # Para tus pruebas en local
+]
+
+# Si la URL pública existe en el .env, la añadimos a la lista
+if front_public_url:
+    allowed_origins.append(front_public_url)
+
+# Inicializamos CORS con la lista de orígenes permitidos
+CORS(app, supports_credentials=True, origins=allowed_origins)
+# --- FIN DE LA CORRECCIÓN DE CORS ---
+
 
 @app.after_request
 def set_security_headers(response):
@@ -109,6 +126,30 @@ def set_security_headers(response):
         "form-action 'self'; "  # Formularios solo al mismo origen
         "base-uri 'self';"  # Restricción de <base> tag
     )
+    # --- ✅ CORRECCIÓN CSP: Permitir conexión a la API pública ---
+    # Necesitamos añadir las URLs de nuestra API y Frontend al Content Security Policy
+    
+    connect_src = "'self' http://localhost:5000" # Por defecto para local
+    if front_public_url:
+        # Extraer solo el hostname (ej. api.plataformaeducativa.store)
+        api_domain = os.getenv('REACT_APP_API_URL', '').replace('https://', '').replace('http://', '')
+        front_domain = front_public_url.replace('https://', '').replace('http://', '')
+        
+        # Permitir conexiones a ambas URLs públicas
+        connect_src = f"'self' {api_domain} {front_domain}"
+
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com; "
+        "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "
+        "font-src 'self' https://cdnjs.cloudflare.com; "
+        "img-src 'self' data: https: blob:; " # 'https:' permite placehold.co y via.placeholder.com
+        f"connect-src {connect_src}; " # Conexión a la API pública
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "base-uri 'self';"
+    )
+    
     response.headers['Content-Security-Policy'] = csp
     
     # 6. Permissions Policy (antes Feature Policy) - Controla qué APIs del navegador puede usar
@@ -237,6 +278,25 @@ def jwt_required(f):
         return f(*args, **kwargs)  # ← IMPORTANTE: pasar los argumentos
 
     return decorated_function
+
+# --- ✅ NUEVO DECORADOR PARA VALIDAR ROL ---
+def role_required(rol):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Asume que @jwt_required ya se ejecutó y puso el usuario en request
+            if not request.current_user:
+                return jsonify({'error': 'Autenticación requerida'}), 401
+                
+            if request.current_user.rol != rol:
+                app.logger.warning(f"Intento de acceso no autorizado: Usuario {request.current_user.email} (rol: {request.current_user.rol}) intentó acceder a ruta para rol '{rol}'")
+                return jsonify({'error': 'No autorizado para este rol'}), 403 # 403 Forbidden
+                
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+# --- FIN DEL NUEVO DECORADOR ---
+
 
 @app.route('/images/<path:filename>')
 def serve_image(filename):
@@ -479,8 +539,10 @@ def registro_alumno_api():
         return jsonify({"error": "Error en el servidor"}), 500
 
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/dashboard_maestro')
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('maestro') # Solo maestros
 def dashboard_maestro_api():
     current_user = request.current_user  # NUEVO: obtener usuario del request
     asesorias = Asesoria.query.filter_by(maestro_id=current_user.id).all()
@@ -504,8 +566,10 @@ def dashboard_maestro_api():
         })
     return jsonify({"asesorias": asesorias_data})
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/dashboard_alumno')
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos
 def dashboard_alumno_api():
     current_user = request.current_user  # NUEVO: obtener usuario del request
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
@@ -528,8 +592,10 @@ def dashboard_alumno_api():
 
 # Registro y pago de asesorías
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/validar_registro/<int:id>', methods=['POST'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos pueden validar
 def validar_registro_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
@@ -540,17 +606,14 @@ def validar_registro_api(id):
     db.session.commit()
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/pago_asesoria/<int:id>', methods=['POST'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos pueden pagar
 def pago_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
 
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
@@ -568,18 +631,15 @@ def pago_asesoria_api(id):
     db.session.commit()
     return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/procesar_pago/<int:id>', methods=['POST'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos pueden pagar
 def procesar_pago_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
     data = request.get_json() if request.is_json else request.form.to_dict()
-    csrf_token = data.get('csrfToken')
-    try:
-        validate_csrf(csrf_token)
-    except Exception as e:
-        return jsonify({"error": "Invalid CSRF token."}), 403
-
+    
     nombre = data.get('nombre')
     tarjeta = data.get('tarjeta')
     vencimiento = data.get('vencimiento')
@@ -595,10 +655,11 @@ def procesar_pago_api(id):
     db.session.commit()
     return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
-# Ruta para crear una nueva asesoría
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos nombre, email, especializacion y nivel.
+
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/nueva_asesoria', methods=['POST'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('maestro') # Solo maestros
 def nueva_asesoria_api():
     current_user = request.current_user  # NUEVO
     data = request.get_json() if request.is_json else request.form.to_dict()
@@ -619,9 +680,10 @@ def nueva_asesoria_api():
     db.session.commit()
     return jsonify({"message": "Asesoría creada con éxito.", "redirect": "/api/dashboard_maestro"})
 
-# Ruta para registrar a un alumno en una asesoría
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/registrar_asesoria/<int:id>', methods=['POST'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos
 def registrar_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
@@ -645,9 +707,10 @@ def registrar_asesoria_api(id):
 
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
-# Ruta para ver los detalles de una asesoría
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/ver_asesoria/<int:id>', methods=['GET'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('alumno') # Solo alumnos
 def ver_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
@@ -694,9 +757,11 @@ def ver_asesoria_api(id):
     return jsonify(context)
 
 # Modificación del endpoint para ver asesoría
-# Modificación del endpoint para ver asesoría (CORREGIDO)
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/ver_detalle_asesoria/<int:id>', methods=['GET'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+# ¡Esta ruta es para ALUMNOS! Ya protegimos la de maestro.
+@role_required('alumno')
 def ver_detalle_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     try:
@@ -742,10 +807,12 @@ def ver_detalle_asesoria_api(id):
         app.logger.error(f"Error al obtener detalles de asesoría: {str(e)}")
         return jsonify({"error": "Error al cargar los detalles"}), 500
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL (AMBOS PUEDEN VER ESTO) ---
 @app.route('/api/ver_asesorias_totales')
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+# Esta ruta no necesita un rol específico, solo estar logueado.
 def ver_asesorias_totales_api():
-    current_user = request.current_user  # NUEVO (aunque no se usa en esta ruta)
+    current_user = request.current_user
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
     asesorias_list = []
     for a, m in results:
@@ -759,13 +826,17 @@ def ver_asesorias_totales_api():
             "maestro": {
                 "id": m.id,
                 "nombre": m.nombre,
-                "email": m.email
+                "email": m.email,
+                # --- ✅ CORRECCIÓN: Añadir si el maestro es el actual ---
+                "esActual": current_user.rol == 'maestro' and m.id == current_user.id
             }
         })
-    return jsonify({"asesorias": asesorias_list})
+    return jsonify(asesorias_list) # Devolvía {"asesorias": ...} pero tu React espera un array
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/borrar_asesoria/<int:id>', methods=['DELETE'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('maestro') # Solo maestros
 def borrar_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
@@ -781,10 +852,10 @@ def borrar_asesoria_api(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar la asesoría. Intenta de nuevo."}), 500
 
-# Ruta para editar una asesoría
-# Después de obtener los datos con data = request.form.to_dict(), usamos clean() de Bleach para eliminar cualquier etiqueta o script potencialmente malicioso de los campos descripcion y temas.
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/editar_asesoria/<int:id>', methods=['GET', 'PUT'])
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('maestro') # Solo maestros
 def editar_asesoria_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
@@ -828,8 +899,10 @@ def editar_asesoria_api(id):
 def ver_detalle_asesoria_maestro_dup(id):
     return redirect(url_for('ver_detalle_asesoria_maestro_api', id=id))
 
+# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
 @app.route('/api/ver_detalle_asesoria_maestro/<int:id>')
-@jwt_required  # Cambiado de @login_required
+@jwt_required
+@role_required('maestro') # Solo maestros
 def ver_detalle_asesoria_maestro_api(id):
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)

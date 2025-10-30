@@ -65,7 +65,7 @@ const Login = () => {
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="email" className="text-white">Correo Electrónico</label>
+            <label-oscura htmlFor="email" className="text-white">Correo Electrónico</label-oscura>
             <input
               type="email"
               className="form-control"
@@ -78,7 +78,7 @@ const Login = () => {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="password" className="text-white">Contraseña</label>
+            <label-oscura htmlFor="password" className="text-white">Contraseña</label-oscura>
             <input
               type="password"
               className="form-control"
@@ -93,7 +93,7 @@ const Login = () => {
           
           <button 
             type="submit" 
-            className="btn btn-light btn-block"
+            className="btn btn-custom-blue btn-block"
             disabled={loading}
           >
             {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
@@ -101,7 +101,7 @@ const Login = () => {
         </form>
         
         <hr className="bg-light" />
-        <div className="text-center">Otras opciones de inicio de sesión</div>
+        <label-oscura className="text-center">Otras opciones de inicio de sesión</label-oscura>
         <div className="d-flex justify-content-around mt-2 p-2 bg-white" style={{ borderRadius: '10px' }}>
           <button className="btn btn-outline-dark" onClick={mostrarMensaje}>X</button>
           <button className="btn btn-outline-danger" onClick={mostrarMensaje}>Google</button>
@@ -109,7 +109,7 @@ const Login = () => {
         </div>
         <hr className="bg-light" />
         <div className="text-center">
-          <Link to="/crear_usuario" className="text-white">¿No tienes una cuenta? Regístrate</Link>
+          <Link to="/crear_usuario" className="text-black">¿No tienes una cuenta? Regístrate</Link>
         </div>
       </div>
     </div>

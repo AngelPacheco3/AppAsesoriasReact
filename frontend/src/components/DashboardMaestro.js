@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios, { removeJWTToken } from '../axiosConfig';  // 🔴 CAMBIO: Importar removeJWTToken
+// Asegúrate de que esta ruta '../axiosConfig' sea correcta
+import axios, { removeJWTToken } from '../axiosConfig'; 
 import { useNavigate } from 'react-router-dom';
 
 const DashboardMaestro = () => {
@@ -8,58 +9,50 @@ const DashboardMaestro = () => {
   const [actualizar, setActualizar] = useState(false);
   const navigate = useNavigate();
 
-  // Función para cargar asesorías (sin cambios)
+  // Función para cargar asesorías
   const cargarAsesorias = () => {
     axios.get('/api/dashboard_maestro')
       .then(response => {
         console.log("Datos actualizados recibidos:", response.data);
         setAsesorias(Array.isArray(response.data.asesorias) ? response.data.asesorias : []);
+        setError(''); // Limpiar errores
       })
       .catch(err => {
         console.error("Error al cargar asesorías:", err);
         setError('Error al cargar las asesorías.');
+        setAsesorias([]); // Limpiar en caso de error
       });
   };
 
-  // Cargar asesorías al montar el componente y cuando se crea o elimina una asesoría
+  // Cargar asesorías al montar y al actualizar
   useEffect(() => {
     cargarAsesorias();
   }, [actualizar]);
 
-  // 🔴 CAMBIO: Función handleLogout actualizada para JWT
+  // Función de Logout
   const handleLogout = async () => {
     if (window.confirm("¿Deseas cerrar sesión?")) {
       try {
-        // 1. Llamar al endpoint de logout
         await axios.post('/api/logout', {});
-        
-        // 2. IMPORTANTE: Eliminar el JWT token del localStorage
         removeJWTToken();
-        
         console.log("Sesión cerrada correctamente.");
-        
-        // 3. Limpiar el estado local
         setAsesorias([]);
-        
-        // 4. Redirigir al login
         navigate('/login');
       } catch (err) {
         console.error("Error al cerrar sesión:", err);
-        
-        // IMPORTANTE: Incluso si hay error, eliminar token y redirigir
         removeJWTToken();
         navigate('/login');
       }
     }
   };
 
-  // Manejo de eliminación de asesorías (sin cambios)
+  // Manejo de eliminación de asesorías
   const handleDelete = (id) => {
     if (window.confirm("¿Estás seguro de que quieres eliminar esta asesoría?")) {
       axios.delete(`/api/borrar_asesoria/${id}`)
         .then(() => {
           console.log(`Asesoría ${id} eliminada correctamente.`);
-          setActualizar(!actualizar);
+          setActualizar(!actualizar); // Forzar recarga de asesorías
         })
         .catch(() => alert("Error al eliminar la asesoría."));
     }
@@ -70,73 +63,86 @@ const DashboardMaestro = () => {
       {/* Navbar */}
       <nav className="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
         <span className="navbar-brand mx-auto">Asesorías Maestros</span>
-        <div className="collapse navbar-collapse">
-          <ul className="navbar-nav ml-auto">
-            <li className="nav-item">
-              <button className="btn btn-light" onClick={handleLogout}>Cerrar Sesión</button>
-            </li>
-          </ul>
-        </div>
+        {/* Botón de Logout añadido como en el dashboard de alumno */}
+        <ul className="navbar-nav ml-auto">
+          <li className="nav-item">
+            <button className="btn btn-light" onClick={handleLogout}>Cerrar Sesión</button>
+          </li>
+        </ul>
       </nav>
 
       {/* Contenedor principal */}
       <div className="container mt-4">
         <div className="card shadow-lg">
-          <div className="card-body">
+          <div className="card-body"> {/* El CSS responsivo depende de .card-body */}
             <h2 className="text-center mb-4">Tus Asesorías</h2>
 
             {error ? (
               <p className="text-danger text-center">{error}</p>
             ) : (
-              <table className="table table-striped table-hover">
-                <thead className="thead-dark">
-                  <tr>
-                    <th>Descripción</th>
-                    <th>Costo</th>
-                    <th>Máximo de Alumnos</th>
-                    <th>Temas</th>
-                    <th>Registrados</th>
-                    <th>Total Pagado</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {asesorias.length === 0 ? (
+              // --- (Sin cambios aquí) ---
+              <div className="table-responsive">
+                <table className="table table-striped table-hover table-sm">
+                  <thead className="thead-dark">
                     <tr>
-                      <td colSpan="7" className="text-center">No has creado asesorías.</td>
+                      <th>Descripción</th>
+                      <th>Costo</th>
+                      <th>Máximo de Alumnos</th>
+                      <th>Temas</th>
+                      <th>Registrados</th>
+                      <th>Total Pagado</th>
+                      <th></th>
                     </tr>
-                  ) : (
-                    asesorias.map(({ id, descripcion, costo, max_alumnos, temas, registrados, total_pagado }) => (
-                      <tr key={id}>
-                        <td>{descripcion}</td>
-                        <td>{costo}</td>
-                        <td>{max_alumnos}</td>
-                        <td>{temas}</td>
-                        <td>{registrados}</td>
-                        <td>${total_pagado.toFixed(2)}</td>
-                        <td>
-                          <button 
-                            className="btn btn-info btn-sm"
-                            onClick={() => navigate(`/ver_detalle_asesoria_maestro/${id}`)}
-                          >
-                            Ver Detalles
-                          </button>
-
-                          <button 
-                            className="btn btn-danger btn-sm ms-2"
-                            onClick={() => handleDelete(id)}
-                          >
-                            Eliminar
-                          </button>
-                        </td>
+                  </thead>
+                  <tbody>
+                    {asesorias.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="text-center" data-label="">No has creado asesorías.</td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      asesorias.map(({ id, descripcion, costo, max_alumnos, temas, registrados, total_pagado }) => (
+                        <tr key={id}>
+                          <td data-label="Descripción">{descripcion}</td>
+                          <td data-label="Costo">${costo ? costo.toFixed(2) : 'N/A'}</td>
+                          <td data-label="Máx. Alumnos">{max_alumnos}</td>
+                          <td data-label="Temas">{temas}</td>
+                          <td data-label="Registrados">{registrados}</td>
+                          <td data-label="Total Pagado">${total_pagado ? total_pagado.toFixed(2) : '0.00'}</td>
+                          
+                          {/* --- ✅ INICIO DE LA MODIFICACIÓN (Bootstrap 4) --- */}
+                          <td data-label="Acciones">
+                            {/* En la vista móvil (donde data-label="Acciones" está activo), 
+                              el CSS que te di hace que el 'td' sea un bloque.
+                              Ahora añadimos 'btn-block' para que cada botón ocupe el ancho 
+                              y 'mb-2' para separarlos verticalmente.
+                            */}
+                            <div>
+                              <button 
+                                className="btn btn-info btn-sm btn-block mb-2" // Botón en bloque con margen inferior
+                                onClick={() => navigate(`/ver_detalle_asesoria_maestro/${id}`)}
+                              >
+                                Ver Detalles
+                              </button>
+
+                              <button 
+                                className="btn btn-danger btn-sm btn-block" // Botón en bloque
+                                onClick={() => handleDelete(id)}
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </td>
+                          {/* --- ✅ FIN DE LA MODIFICACIÓN --- */}
+
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
 
-            {/* Botón para actualizar manualmente */}
+            {/* (Sin cambios aquí) */}
             <div className="text-center mt-3">
               <button className="btn btn-secondary" onClick={() => setActualizar(!actualizar)}>
                 🔄 Actualizar Asesorías
@@ -144,7 +150,7 @@ const DashboardMaestro = () => {
             </div>
 
             <button 
-              className="btn btn-success btn-block mt-4"
+              className="btn btn-success btn-block mt-4" // btn-block (Bootstrap 4)
               onClick={() => navigate('/nueva_asesoria')}
             >
               Agregar Nueva Asesoría
