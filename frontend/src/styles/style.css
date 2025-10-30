@@ -1,17 +1,27 @@
-/* Estilos generales del cuerpo */
+/* --- VARIABLES DE COLOR --- */
+:root {
+    --color-primary: #009688; /* Verde Teal: Moderno, estable y profesional */
+    --color-primary-dark: #00796b; /* Un poco más oscuro para el hover */
+    --color-text-dark: #333333; /* Texto oscuro principal */
+    --color-border-light: #e0e0e0; /* Borde muy claro para inputs y tarjetas */
+    --color-background-light: #f8f8f8; /* Fondo sutil para hover o secciones */
+}
+
+/* --- ESTILOS GLOBALES Y DE FONDO --- */
 body {
     margin: 0;
     padding: 0;
     height: 100vh;
-    background-image: url('./.Fondo1.jpeg'); /* Imagen de fondo */
+    /* Se mantiene la imagen de fondo, pero el login usará transparencia blanca */
+    background-image: url('./.Fondo1.jpeg'); 
     background-repeat: no-repeat;
     background-position: center center;
     background-attachment: fixed;
     background-size: cover;
-    font-family: Arial, sans-serif; /* Fuente general */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Fuente moderna */
+    color: var(--color-text-dark);
 }
 
-/* Estilo para el contenedor principal */
 .container-fluid {
     display: flex;
     justify-content: center;
@@ -19,82 +29,107 @@ body {
     height: 100vh;
 }
 
-/* Estilos para el cuadro de inicio de sesión */
+/* --- ESTILOS DEL CUADRO DE LOGIN/FORMULARIO (.login-box) --- */
 .login-box {
-    background-color: rgba(0, 123, 255, 0.85); /* Fondo ligeramente transparente */
-    padding: 30px;
-    border-radius: 20px; /* Bordes más redondeados */
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2); /* Sombra más pronunciada */
+    /* Fondo blanco semi-transparente para máxima legibilidad y estilo moderno */
+    background-color: rgba(255, 255, 255, 0.95); 
+    padding: 40px; 
+    border-radius: 12px; 
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Sombra más suave */
     width: 400px;
-    backdrop-filter: blur(10px); /* Desenfoque del fondo */
-    color: white; /* Texto blanco */
+    backdrop-filter: blur(8px); 
+    border: 1px solid rgba(0, 0, 0, 0.05); /* Borde sutil */
 }
 
-/* Estilos para el título */
+/* --- TIPOGRAFÍA Y ETIQUETAS --- */
 h2 {
-    margin-bottom: 20px;
-    font-size: 28px; /* Fuente un poco más grande */
-    font-weight: bold; /* Negrita */
-    color: black; /* Títulos en negro */
+    margin-bottom: 30px;
+    font-size: 32px;
+    font-weight: 600; 
+    color: var(--color-text-dark); 
+    text-align: center;
 }
 
-/* Estilos para las etiquetas */
 label {
     display: block;
     margin-bottom: 5px;
+    font-weight: 500;
+    color: var(--color-text-dark);
+}
+label-oscura {
+    display: block;
+    margin-bottom: 5px;
     font-weight: bold; /* Negrita */
-    color: white; /* Texto blanco dentro del formulario */
+    color: rgb(0, 0, 0); /* Texto blanco dentro del formulario */
 }
 
-/* Estilos para los campos de entrada */
+/* --- CAMPOS DE ENTRADA (INPUTS) --- */
 input, select {
     width: 100%;
-    padding: 12px; /* Un poco más de padding */
-    margin-bottom: 15px; /* Espaciado entre los campos */
-    border: 1px solid #ccc; /* Bordes grises claros */
-    border-radius: 10px; /* Bordes redondeados */
-    color: black; /* Texto negro para buena legibilidad */
+    padding: 14px; 
+    margin-bottom: 20px; 
+    border: 1px solid var(--color-border-light);
+    border-radius: 8px; 
+    color: var(--color-text-dark);
+    transition: border-color 0.3s, box-shadow 0.3s;
 }
 
-/* Estilos para el foco en los campos de entrada y botones */
 input:focus, button:focus, select:focus {
     outline: none;
-    border-color: #0056b3; /* Color de borde al enfocar */
-    box-shadow: 0 0 5px #0056b3; /* Sombra al enfocar */
+    border-color: var(--color-primary); 
+    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.2); /* Sombra de enfoque con color primario */
 }
 
-/* Estilos para los botones */
+/* --- BOTONES GENERALES --- */
 button {
-    background-color: white;
-    color: #007BFF;
+    background-color: var(--color-primary);
+    color: rgba(255, 255, 255, 0.651);
     border: none;
-    padding: 12px; /* Un poco más de padding */
-    border-radius: 10px; /* Bordes redondeados */
+    padding: 14px;
+    border-radius: 8px;
     cursor: pointer;
-    font-weight: bold; /* Negrita */
+    font-weight: 600;
+    transition: background-color 0.3s, transform 0.1s;
+    width: 100%; /* Por defecto, ancho completo para formularios */
 }
 
 /* Estilos para los botones al pasar el ratón */
 button:hover {
-    background-color: lightgray; /* Color de fondo al pasar el ratón */
+    background-color: var(--color-primary-dark);
+    transform: translateY(-1px);
 }
 
-/* Estilos para botón personalizado */
+/* --- BOTÓN PRINCIPAL CUSTOM --- */
 .btn-custom {
-    background-color: #0056b3; /* Color de fondo personalizado */
-    color: white; /* Color de texto blanco */
-    border: 2px solid #007BFF; /* Borde azul claro */
-    padding: 10px 20px; /* Padding personalizado */
-    border-radius: 5px; /* Bordes redondeados */
+    background-color: var(--color-primary); 
+    color: white;
+    border: 1px solid var(--color-primary); 
+    padding: 12px 20px; 
+    border-radius: 8px;
 }
 
-/* Estilos para botón personalizado al pasar el ratón */
 .btn-custom:hover {
-    background-color: #003f7f; /* Color de fondo al pasar el ratón */
-    border-color: #0056b3; /* Cambio de borde al pasar el ratón */
+    background-color: var(--color-primary-dark); 
+    border-color: var(--color-primary-dark); 
 }
 
-/* Estilos para el botón de retroceso */
+/* --- BOTONES DE SERVICIOS (Google/Facebook) --- */
+.btn-outline-danger {
+    background-color: white; 
+    color: #DB4437; /* Rojo de Google */
+    border: 1px solid var(--color-border-light); 
+    padding: 12px;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-outline-danger:hover {
+    background-color: var(--color-background-light); 
+    color: #DB4437;
+    border-color: #cacaca;
+}
+
+/* --- ESTILOS DE UTILIDAD --- */
 .btn-back {
     position: absolute;
     top: 10px;
@@ -102,65 +137,44 @@ button:hover {
     z-index: 1;
 }
 
-/* Estilos para texto centrado */
 .text-center {
     text-align: center;
-    font-weight: bold; /* Negrita */
+    font-weight: 600;
 }
 
-/* Estilos para margen inferior */
 .mb-4 {
-    margin-bottom: 1.5rem; /* Margen inferior */
+    margin-bottom: 1.5rem;
 }
 
-/* Estilos para margen superior */
 .mt-2 {
-    margin-top: 10px; /* Margen superior */
+    margin-top: 10px;
 }
 
-/* Estilos para botones de Google */
-.btn-outline-danger {
-    background-color: #DB4437; /* Rojo de Google */
-    color: white;
-    border: 1px solid #DB4437; /* Borde rojo */
-}
-
-/* Estilos para botones de Google al pasar el ratón */
-.btn-outline-danger:hover {
-    background-color: white; /* Fondo blanco al pasar el ratón */
-    color: #DB4437; /* Texto rojo al pasar el ratón */
-}
-
-/* Flexbox */
 .d-flex {
-    display: flex; /* Muestra en flexbox */
+    display: flex;
 }
 
-/* Justificación alrededor */
 .justify-content-around {
-    justify-content: space-around; /* Espacio entre los elementos */
+    justify-content: space-around;
 }
 
-/* Estilos para padding */
 .p-2 {
-    padding: 10px; /* Padding de 10px */
+    padding: 10px;
 }
 
-/* Fondo blanco con bordes redondeados */
 .bg-white {
-    background-color: white; /* Fondo blanco */
-    border-radius: 10px; /* Bordes redondeados */
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Sombra para tarjetas/tablas */
 }
 
-/* Línea divisoria clara */
 hr.bg-light {
-    background-color: white; /* Color de fondo */
-    border: none; /* Sin borde */
-    height: 1px; /* Altura de 1px */
+    background-color: #e0e0e0;
+    border: none;
+    height: 1px;
 }
-/* En tu archivo CSS (style.css o similar) */
 
-/* --- Estilos SUPER ESPECÍFICOS para tabla responsiva en móviles --- */
+/* --- ESTILOS RESPONSIVOS PARA TABLAS (MANTENIDO) --- */
 
 /* Aplicar solo en pantallas de 768px o menos */
 @media (max-width: 768px) {
@@ -168,37 +182,37 @@ hr.bg-light {
     /* Seleccionar tabla DENTRO del div .card-body y .table-responsive */
     .card-body .table-responsive > .table {
         border: 0 !important; 
-        width: 100% !important; /* Asegurar ancho completo */
-        background-color: transparent !important; /* Quitar fondo de tabla si existe */
+        width: 100% !important; 
+        background-color: transparent !important; 
     }
 
     /* Ocultar encabezado original */
     .card-body .table-responsive > .table > thead {
-        display: none !important; /* Ocultar completamente */
+        display: none !important; 
     }
 
     /* Estilo para cada fila (será una tarjeta) */
     .card-body .table-responsive > .table > tbody > tr {
-        display: block !important; /* Forzar bloque */
-        width: 100% !important; /* Ancho completo */
-        margin-bottom: 1.5rem !important; /* Espacio entre tarjetas */
-        border: 1px solid #dee2e6 !important; /* Borde */
-        border-radius: .3rem !important; /* Bordes redondeados */
-        background-color: #ffffff !important; /* Fondo blanco */
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important; /* Sombra ligera */
-        color: #495057 !important; /* Texto un poco más oscuro */
+        display: block !important; 
+        width: 100% !important; 
+        margin-bottom: 1.5rem !important; 
+        border: 1px solid var(--color-border-light) !important; 
+        border-radius: .5rem !important; /* Ligeramente más redondeado */
+        background-color: #ffffff !important; 
+        box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important; /* Sombra ligera */
+        color: var(--color-text-dark) !important; 
     }
 
     /* Estilo para cada celda (será un campo dentro de la tarjeta) */
     .card-body .table-responsive > .table > tbody > tr > td {
-        display: block !important; /* Forzar bloque */
-        width: 100% !important; /* Ancho completo */
-        padding: .75rem .75rem .75rem 50% !important; /* Padding: top right bottom left(50%) */
+        display: block !important; 
+        width: 100% !important; 
+        padding: .75rem .75rem .75rem 50% !important; 
         position: relative !important;
-        text-align: right !important; /* Alinear valor a la derecha */
-        font-size: 0.9em !important; /* Tamaño de fuente */
-        border: none !important; /* Quitar bordes internos de celda */
-        border-bottom: 1px solid #e9ecef !important; /* Separador ligero */
+        text-align: right !important; 
+        font-size: 0.9em !important; 
+        border: none !important; 
+        border-bottom: 1px solid #f0f0f0 !important; /* Separador más claro */
     }
 
     /* Quitar borde inferior de la última celda */
@@ -208,26 +222,37 @@ hr.bg-light {
 
     /* Etiqueta (Label) usando el data-label */
     .card-body .table-responsive > .table > tbody > tr > td::before {
-        content: attr(data-label) !important; /* Mostrar etiqueta */
+        content: attr(data-label) !important; 
         position: absolute !important;
-        top: 50% !important; /* Centrar verticalmente */
-        transform: translateY(-50%) !important; /* Ajuste fino vertical */
-        left: .75rem !important; /* Margen izquierdo */
-        width: 40% !important; /* Ancho etiqueta */
-        padding-right: .5rem !important; /* Espacio */
+        top: 50% !important; 
+        transform: translateY(-50%) !important; 
+        left: .75rem !important; 
+        width: 40% !important; 
+        padding-right: .5rem !important; 
         white-space: nowrap !important;
-        text-align: left !important; /* Alinear etiqueta a la izquierda */
+        text-align: left !important; 
         font-weight: bold !important;
-        color: #007bff !important; /* Color azul */
+        color: var(--color-primary) !important; /* Color primario (Teal) */
     }
 
     /* Estilos específicos para la celda de Acciones */
-    .card-body .table-responsive > .table > tbody > tr > td[data-label="Acciones"] {
-        text-align: center !important; /* Centrar contenido */
-        padding-left: .75rem !important; /* Resetear padding izquierdo */
+    .card-body .table-responsive > .table > tbody > tr > td[data-label=""] {
+        text-align: center !important; 
+        padding-left: .75rem !important; 
     }
-     .card-body .table-responsive > .table > tbody > tr > td[data-label="Acciones"] button {
-        /* Estilos del botón si es necesario */
-        margin: 0.2rem auto !important; /* Centrar botón si es display block */
+     .card-body .table-responsive > .table > tbody > tr > td[data-label=""] button {
+        margin: 0.2rem auto !important; 
+        width: auto !important; /* Ajustar ancho del botón */
      }
+}
+.btn-custom-blue {
+  background-color: #7CB9E8 !important;
+  color: white !important;
+  border: none !important;
+}
+
+.btn-custom-blue:hover {
+  background-color: #5CA9E8 !important;
+  transform: translateY(-1px);
+  transition: all 0.2s;
 }
