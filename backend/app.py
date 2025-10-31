@@ -114,41 +114,30 @@ def set_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
     # 5. Content Security Policy - Controla qué recursos puede cargar la página
-    # Esta es una política básica que permite recursos del mismo origen
-    csp = (
-        "default-src 'self'; "  # Por defecto, solo recursos del mismo origen
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com; "  # Scripts
-        "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "  # Estilos
-        "font-src 'self' https://cdnjs.cloudflare.com; "  # Fuentes
-        "img-src 'self' data: https: blob:; "  # Imágenes
-        "connect-src 'self' http://localhost:* ws://localhost:*; "  # Conexiones AJAX/WebSocket
-        "frame-ancestors 'none'; "  # Previene embedding
-        "form-action 'self'; "  # Formularios solo al mismo origen
-        "base-uri 'self';"  # Restricción de <base> tag
-    )
-    # --- ✅ CORRECCIÓN CSP: Permitir conexión a la API pública ---
-    # Necesitamos añadir las URLs de nuestra API y Frontend al Content Security Policy
     
-    connect_src = "'self' http://localhost:5000" # Por defecto para local
+    # --- ✅ INICIO MODIFICACIÓN PAYPAL: Actualizar CSP ---
+    connect_src = "'self' http://localhost:5000" 
     if front_public_url:
-        # Extraer solo el hostname (ej. api.plataformaeducativa.store)
         api_domain = os.getenv('REACT_APP_API_URL', '').replace('https://', '').replace('http://', '')
         front_domain = front_public_url.replace('https://', '').replace('http://', '')
-        
-        # Permitir conexiones a ambas URLs públicas
-        connect_src = f"'self' {api_domain} {front_domain}"
+        # Permitir conexiones a ambas URLs públicas y a PayPal
+        connect_src = f"'self' {api_domain} {front_domain} *.paypal.com"
 
     csp = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com; "
+        # Permitir scripts de PayPal
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com https://www.paypal.com; " 
         "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "
         "font-src 'self' https://cdnjs.cloudflare.com; "
-        "img-src 'self' data: https: blob:; " # 'https:' permite placehold.co y via.placeholder.com
-        f"connect-src {connect_src}; " # Conexión a la API pública
+        "img-src 'self' data: https: blob:; " 
+        f"connect-src {connect_src}; " # Conexión a la API pública y PayPal
+        # Permitir que PayPal abra su pop-up (frame)
+        "frame-src 'self' https://www.paypal.com; " 
         "frame-ancestors 'none'; "
         "form-action 'self'; "
         "base-uri 'self';"
     )
+    # --- ✅ FIN MODIFICACIÓN PAYPAL ---
     
     response.headers['Content-Security-Policy'] = csp
     
@@ -606,54 +595,55 @@ def validar_registro_api(id):
     db.session.commit()
     return jsonify({"message": "Te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
 
-# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
-@app.route('/api/pago_asesoria/<int:id>', methods=['POST'])
-@jwt_required
-@role_required('alumno') # Solo alumnos pueden pagar
-def pago_asesoria_api(id):
-    current_user = request.current_user  # NUEVO
-    asesoria = Asesoria.query.get_or_404(id)
-    data = request.get_json() if request.is_json else request.form.to_dict()
+# --- ✅ INICIO DE LA MODIFICACIÓN: Ruta de Pago Simplificada ---
+# Se elimina /api/pago_asesoria y se modifica /api/procesar_pago
 
-    nombre = data.get('nombre')
-    tarjeta = data.get('tarjeta')
-    vencimiento = data.get('vencimiento')
-    cvv = data.get('cvv')
-    celular = data.get('celular')
-    if not all([nombre, tarjeta, vencimiento, cvv, celular]):
-        return jsonify({"error": "Todos los campos son obligatorios."}), 400
-    registro = RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id, alumno_id=current_user.id).first()
-    if not registro:
-        registro = RegistroAsesoria(asesoria_id=asesoria.id, alumno_id=current_user.id, pagado=False)
-        db.session.add(registro)
-    registro.pagado = True
-    asesoria.total_pagado += asesoria.costo
-    db.session.commit()
-    return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
+# --- ❌ RUTA ELIMINADA (AHORA MANEJADA POR procesar_pago) ---
+# @app.route('/api/pago_asesoria/<int:id>', methods=['POST'])
+# ...
 
-# --- ✅ APLICANDO PROTECCIÓN DE ROL ---
+# --- ✅ RUTA /api/procesar_pago ACTUALIZADA ---
 @app.route('/api/procesar_pago/<int:id>', methods=['POST'])
 @jwt_required
 @role_required('alumno') # Solo alumnos pueden pagar
 def procesar_pago_api(id):
+    """
+    Esta ruta se llama DESPUÉS de que PayPal confirma el pago en el frontend.
+    Ya no recibe datos de tarjeta de crédito.
+    Su única función es registrar que el pago se completó.
+    """
     current_user = request.current_user  # NUEVO
     asesoria = Asesoria.query.get_or_404(id)
-    data = request.get_json() if request.is_json else request.form.to_dict()
     
-    nombre = data.get('nombre')
-    tarjeta = data.get('tarjeta')
-    vencimiento = data.get('vencimiento')
-    cvv = data.get('cvv')
-    celular = data.get('celular')
-    if not all([nombre, tarjeta, vencimiento, cvv, celular]):
-        return jsonify({"error": "Todos los campos son obligatorios."}), 400
+    # Opcional: Registrar el ID de la orden de PayPal
+    data = request.get_json() if request.is_json else {}
+    paypal_order_id = data.get('paypal_order_id') 
+    if paypal_order_id:
+        app.logger.info(f"Usuario {current_user.email} pagó la asesoría {id} con orden PayPal {paypal_order_id}")
+    else:
+        app.logger.info(f"Usuario {current_user.email} pagó la asesoría {id} (sin ID de PayPal provisto).")
+
+    # Buscar si el alumno ya está registrado (ej. se inscribió pero no pagó)
     registro = RegistroAsesoria.query.filter_by(asesoria_id=asesoria.id, alumno_id=current_user.id).first()
+    
     if not registro:
+        # Si no existe, lo creamos
         registro = RegistroAsesoria(asesoria_id=asesoria.id, alumno_id=current_user.id, pagado=False)
         db.session.add(registro)
+    
+    # Marcamos el registro como pagado
     registro.pagado = True
+    
+    # (Opcional) Actualizar el total_pagado en la asesoría si no lo has hecho
+    # asesoria.total_pagado = (asesoria.total_pagado or 0.0) + asesoria.costo
+    
     db.session.commit()
-    return jsonify({"message": "Pago realizado y te has registrado en la asesoría con éxito.", "redirect": f"/api/ver_asesoria/{asesoria.id}"})
+    
+    return jsonify({
+        "message": "Pago realizado y te has registrado en la asesoría con éxito.",
+        "redirect": f"/api/ver_asesoria/{asesoria.id}"
+    })
+# --- ✅ FIN DE LA MODIFICACIÓN ---
 
 
 # --- ✅ APLICANDO PROTECCIÓN DE ROL ---
@@ -731,6 +721,10 @@ def ver_asesoria_api(id):
     else:
         registrado = False
         pagado = False
+        
+    # --- ✅ CORRECCIÓN: Construir URL de imagen para el frontend ---
+    foto_path = f"/images/{maestro.foto}" if maestro.foto else None
+        
     asesoria_dict = {
         "id": asesoria.id,
         "descripcion": asesoria.descripcion,
@@ -743,7 +737,7 @@ def ver_asesoria_api(id):
         "id": maestro.id,
         "nombre": maestro.nombre,
         "email": maestro.email,
-        "foto": maestro.foto
+        "foto": foto_path # Enviar foto_path
     }
     alumnos_list = [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in alumnos]
     context = {
@@ -939,4 +933,4 @@ def ver_detalle_asesoria_maestro_api(id):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
+    

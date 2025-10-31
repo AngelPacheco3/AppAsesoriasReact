@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@paypal/react-paypal-js": "^8.9.2",
     "axios": "^1.6.8",
     "bcryptjs": "^3.0.2",
     "bootstrap": "^5.3.6",
@@ -36,5 +37,4 @@
       "last 1 safari version"
     ]
   }
-  
 }

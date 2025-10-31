@@ -23,7 +23,7 @@ const VerAsesoria = () => {
         setLoading(true);
         setError(null); 
 
-        // --- ✅ CORRECCIÓN: Llamada a la API de alumno correcta (relativa) ---
+        // --- ✅ CORRECCIÓN: Se AÑADE el prefijo /api/ ---
         const response = await axios.get(`/api/ver_asesoria/${id}`, {
           withCredentials: true 
         });
@@ -34,13 +34,14 @@ const VerAsesoria = () => {
 
         const { asesoria: asesoriaData, maestro: maestroData, alumnos: alumnosData, registrado: regStatus, pagado: pagStatus } = response.data;
         
+        // --- ✅ CORRECCIÓN: Usar la baseURL de axios para construir la URL ---
+        // axios.defaults.baseURL es "https://api.plataformaeducativa.store"
+        // maestroData.foto es "/images/paquito_profile.png"
         const maestroConFoto = {
           ...maestroData,
-          // --- ✅ CORRECCIÓN: Usar la baseURL de axios para construir la URL de la imagen ---
-          // Asumiendo que maestroData.foto es solo el nombre del archivo (ej: "mi_foto.jpg")
           fotoUrl: maestroData.foto 
-            ? `${axios.defaults.baseURL}/images/${maestroData.foto.replace(/^\/+/, '')}` // Usa la URL base de axios
-            : 'https://via.placeholder.com/150' 
+            ? `${axios.defaults.baseURL}${maestroData.foto}` // Resultado: https://api.plataformaeducativa.store/images/paquito_profile.png
+            : 'https://placehold.co/150x150/007bff/FFFFFF?text=Maestro' 
         };
         
         setAsesoria(asesoriaData);
@@ -124,7 +125,7 @@ const VerAsesoria = () => {
           <div className="row mb-3">
             <div className="col-md-6">
               <h4>Detalles de la Asesoría</h4>
-              <p><strong>Costo:</strong> ${asesoria.costo ? asesoria.costo.toFixed(2) : 'N/A'}</p>
+              <p><strong>Costo:</strong> ${asesoria.costo ? asesoria.costo : 'N/A'}</p> 
               <p><strong>Cupo:</strong> {alumnos.length}/{asesoria.max_alumnos} alumnos</p>
               <p><strong>Temas:</strong> {asesoria.temas}</p>
             </div>
@@ -145,7 +146,7 @@ const VerAsesoria = () => {
                 }}
                 onError={(e) => {
                   e.target.onerror = null; 
-                  e.target.src = 'https://via.placeholder.com/150'; 
+                  e.target.src = 'https://placehold.co/150x150/007bff/FFFFFF?text=Maestro'; 
                 }}
               />
             </div>
@@ -203,7 +204,7 @@ const VerAsesoria = () => {
                      className="btn btn-primary btn-lg"
                      onClick={() => navigate(`/pago_asesoria/${asesoria.id}`)} 
                    >
-                     Registrarse y pagar (${asesoria.costo ? asesoria.costo.toFixed(2) : 'N/A'})
+                     Registrarse y pagar (${asesoria.costo ? asesoria.costo : 'N/A'})
                    </button>
                  </div>
             ) : (

@@ -1,9 +1,10 @@
 import axios from 'axios';
-// ✅ NUEVA IMPORTACIÓN
 import { jwtDecode } from 'jwt-decode';
 
+// --- ✅ CORRECCIÓN: La baseURL NUNCA debe incluir /api ---
+axios.defaults.baseURL = process.env.REACT_APP_API_URL; // Ej: https://api.plataformaeducativa.store
+
 // Configurar axios con credenciales
-axios.defaults.baseURL = process.env.REACT_APP_API_URL;
 axios.defaults.withCredentials = true;
 
 // Variables para tokens
@@ -24,7 +25,7 @@ export const removeJWTToken = () => {
   localStorage.removeItem('jwt_token');
 };
 
-// --- ✅ NUEVA FUNCIÓN PARA OBTENER DATOS DEL TOKEN ---
+// --- FUNCIÓN PARA OBTENER DATOS DEL TOKEN ---
 export const getUserData = () => {
   const token = getJWTToken();
   if (!token) {
@@ -40,13 +41,15 @@ export const getUserData = () => {
     return null;
   }
 };
-// --- FIN DE LA NUEVA FUNCIÓN ---
+// --- FIN DE LA FUNCIÓN ---
 
 
 // Función para obtener el token CSRF del backend
 const fetchCSRFToken = async () => {
   try {
-    const response = await axios.get('/api/csrf-token');
+    // --- ✅ CORRECCIÓN: Añadir /api/ aquí ---
+    // Esta llamada no es relativa a un componente, debe ser absoluta
+    const response = await axios.get('/api/csrf-token'); 
     csrfToken = response.data.csrf_token;
     return csrfToken;
   } catch (error) {
@@ -102,7 +105,7 @@ axios.interceptors.response.use(
        
        // Redireccionar al login
        // Usamos window.location para forzar recarga completa y limpiar estado
-       window.location.href = '/login';
+       window.location.href = '/#/login'; // Corregido para HashRouter
        return Promise.reject(error);
     }
     
@@ -136,7 +139,8 @@ export const isAuthenticated = () => {
 // Función para verificar el token con el servidor
 export const verifyToken = async () => {
   try {
-    const response = await axios.get('/api/verify-token');
+    // --- ✅ CORRECCIÓN: Añadir /api/ ---
+    const response = await axios.get('/api/verify-token'); // Llama a /api/verify-token
     return response.data;
   } catch (error) {
     removeJWTToken();
