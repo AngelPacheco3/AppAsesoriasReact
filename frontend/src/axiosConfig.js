@@ -2,7 +2,7 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
 // --- ✅ CORRECCIÓN: La baseURL NUNCA debe incluir /api ---
-axios.defaults.baseURL = process.env.REACT_APP_API_URL; // Ej: https://api.plataformaeducativa.store
+// axios.defaults.baseURL = process.env.REACT_APP_API_URL; // ELIMINADA
 
 // Configurar axios con credenciales
 axios.defaults.withCredentials = true;
@@ -41,6 +41,8 @@ export const getUserData = () => {
     return null;
   }
 };
+// --- FIN DE LA FUNCIÓN ---
+
 
 // Función para obtener el token CSRF del backend
 const fetchCSRFToken = async () => {
@@ -129,12 +131,10 @@ axios.interceptors.response.use(
   }
 );
 
-// Función para verificar si el usuario está autenticado
 export const isAuthenticated = () => {
   return !!getJWTToken();
 };
 
-// Función para verificar el token con el servidor
 export const verifyToken = async () => {
   try {
     // --- ✅ CORRECCIÓN: Añadir /api/ ---
@@ -146,7 +146,6 @@ export const verifyToken = async () => {
   }
 };
 
-// Exportar función para refrescar token CSRF manualmente si es necesario
 export const refreshCSRFToken = fetchCSRFToken;
 
 export default axios;

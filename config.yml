@@ -1,5 +1,6 @@
-tunnel: 691aeb32-5f36-4499-abd0-5731f8e4e6ef
-credentials-file: C:\Users\pache\.cloudflared\691aeb32-5f36-4499-abd0-5731f8e4e6ef.json
+tunnel: 8ff00a2d-38a5-4ab1-a2f3-7e99e29760d2
+credentials-file: C:\Users\pache\.cloudflared\8ff00a2d-38a5-4ab1-a2f3-7e99e29760d2.json
+
 ingress:
   - hostname: front.plataformaeducativa.store
     service: http://localhost:3000

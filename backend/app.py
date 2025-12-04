@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 # --- NUEVO: Importar la librería para cargar el archivo .env ---
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 # --- NUEVO: Cargar las variables de entorno del archivo .env al inicio de la app ---
 load_dotenv()
@@ -25,15 +26,31 @@ load_dotenv()
 app = Flask(__name__)
 
 # --- MODIFICADO: Ahora las configuraciones se leen desde las variables de entorno ---
-# Se utiliza os.getenv('NOMBRE_DE_LA_VARIABLE', 'valor_por_defecto')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
+try:
+    db_user = os.getenv('DB_USER')
+    db_password = os.getenv('DB_PASSWORD')
+    db_host = os.getenv('DB_HOST')
+    db_name = os.getenv('DB_NAME')
+    
+    if os.getenv('DATABASE_URL'):
+         app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+    elif db_user and db_password and db_host and db_name:
+         encoded_password = quote_plus(db_password)
+         app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{db_user}:{encoded_password}@{db_host}/{db_name}'
+    else:
+         # Fallback si no hay variables, para evitar crash inmediato (aunque la conexión fallará luego si no es correcta)
+         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///asesorias.db'
+except Exception as e:
+    print(f"Error configurando DB: {e}")
 
-# --- El resto de la configuración se mantiene ---
-app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'dev_jwt_key')
+
+# --- CORRECCIÓN CRÍTICA PARA LOCALHOST ---
+# SESSION_COOKIE_SECURE debe ser False en local (HTTP) para que se guarden las cookies
+app.config['SESSION_COOKIE_SECURE'] = False 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' # Lax es más permisivo y evita problemas en desarrollo local
 app.config['WTF_CSRF_ENABLED'] = True
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 app.config['JWT_ALGORITHM'] = 'HS256'
@@ -74,20 +91,18 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 #login_manager = LoginManager(app)
 
-# --- ✅ CORRECCIÓN DE CORS ---
-# Obtenemos la URL del frontend desde el archivo .env
-front_public_url = os.getenv('FRONT_PUBLIC_URL')
-
-# Creamos una lista de los orígenes permitidos
+# --- ✅ CORRECCIÓN DE CORS (SOLUCIÓN AL ERROR DE REGISTRO) ---
+# Definimos explícitamente los orígenes permitidos para desarrollo local
 allowed_origins = [
-    "http://localhost:3000"  # Para tus pruebas en local
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
 ]
 
 # Si la URL pública existe en el .env, la añadimos a la lista
-if front_public_url:
-    allowed_origins.append(front_public_url)
+if os.getenv('FRONT_PUBLIC_URL'):
+    allowed_origins.append(os.getenv('FRONT_PUBLIC_URL'))
 
-# Inicializamos CORS con la lista de orígenes permitidos
+# Habilitamos CORS permitiendo credenciales (cookies/headers) para estos orígenes
 CORS(app, supports_credentials=True, origins=allowed_origins)
 # --- FIN DE LA CORRECCIÓN DE CORS ---
 
@@ -114,9 +129,12 @@ def set_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
     # 5. Content Security Policy - Controla qué recursos puede cargar la página
+    # Esta es una política básica que permite recursos del mismo origen
     
     # --- ✅ INICIO MODIFICACIÓN PAYPAL: Actualizar CSP ---
     connect_src = "'self' http://localhost:5000" 
+    front_public_url = os.getenv('FRONT_PUBLIC_URL') # Recuperamos la variable aquí también
+    
     if front_public_url:
         api_domain = os.getenv('REACT_APP_API_URL', '').replace('https://', '').replace('http://', '')
         front_domain = front_public_url.replace('https://', '').replace('http://', '')
@@ -125,7 +143,6 @@ def set_security_headers(response):
 
     csp = (
         "default-src 'self'; "
-        # Permitir scripts de PayPal
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com https://www.paypal.com; " 
         "style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdnjs.cloudflare.com; "
         "font-src 'self' https://cdnjs.cloudflare.com; "
@@ -165,6 +182,9 @@ def set_security_headers(response):
     # 10. Previene que Adobe products abran el sitio
     response.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     
+    # --- Header adicional para CORS en local ---
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+
     return response
 
 # MODELOS
@@ -564,6 +584,8 @@ def dashboard_alumno_api():
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
     data = []
     for a, m in results:
+        # Construimos la ruta completa de la imagen si existe
+        foto_url = f"/images/{m.foto}" if m.foto else None
         data.append({
             "id": a.id,
             "descripcion": a.descripcion,
@@ -574,7 +596,8 @@ def dashboard_alumno_api():
             "maestro": {
                 "id": m.id,
                 "nombre": m.nombre,
-                "email": m.email
+                "email": m.email,
+                "foto": foto_url  # ¡Aquí enviamos la foto!
             }
         })
     return jsonify({"asesorias": data})
@@ -810,6 +833,7 @@ def ver_asesorias_totales_api():
     results = db.session.query(Asesoria, User).join(User, Asesoria.maestro_id == User.id).all()
     asesorias_list = []
     for a, m in results:
+        foto_url = f"/images/{m.foto}" if m.foto else None # Construir URL
         asesorias_list.append({
             "id": a.id,
             "descripcion": a.descripcion,
@@ -822,7 +846,8 @@ def ver_asesorias_totales_api():
                 "nombre": m.nombre,
                 "email": m.email,
                 # --- ✅ CORRECCIÓN: Añadir si el maestro es el actual ---
-                "esActual": current_user.rol == 'maestro' and m.id == current_user.id
+                "esActual": current_user.rol == 'maestro' and m.id == current_user.id,
+                "foto": foto_url # Enviar foto
             }
         })
     return jsonify(asesorias_list) # Devolvía {"asesorias": ...} pero tu React espera un array
@@ -888,13 +913,13 @@ def editar_asesoria_api(id):
         }
     })
 
-@app.route('/api/ver_detalle_asesoria_maestro_dup/<int:id>')
+@app.route('/api/ver_detalle_asesoria_maestro_dup/<int:id>', methods=['GET'])
 @jwt_required  # Cambiado de @login_required
 def ver_detalle_asesoria_maestro_dup(id):
     return redirect(url_for('ver_detalle_asesoria_maestro_api', id=id))
 
 # --- ✅ APLICANDO PROTECCIÓN DE ROL ---
-@app.route('/api/ver_detalle_asesoria_maestro/<int:id>')
+@app.route('/api/ver_detalle_asesoria_maestro/<int:id>', methods=['GET'])
 @jwt_required
 @role_required('maestro') # Solo maestros
 def ver_detalle_asesoria_maestro_api(id):
@@ -911,6 +936,9 @@ def ver_detalle_asesoria_maestro_api(id):
             case((RegistroAsesoria.pagado == True, asesoria.costo))
         )
     ).filter(RegistroAsesoria.asesoria_id == asesoria.id).scalar() or 0.0
+    
+    foto_path = f"/images/{maestro.foto}" if maestro.foto else None
+
     data = {
         "asesoria": {
             "id": asesoria.id,
@@ -924,7 +952,8 @@ def ver_detalle_asesoria_maestro_api(id):
         "maestro": {
             "id": maestro.id,
             "nombre": maestro.nombre,
-            "email": maestro.email
+            "email": maestro.email,
+            "foto": foto_path # Enviar foto
         },
         "alumnos": [{"id": a.id, "nombre": a.nombre, "email": a.email} for a in alumnos]
     }
