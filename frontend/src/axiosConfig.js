@@ -41,8 +41,6 @@ export const getUserData = () => {
     return null;
   }
 };
-// --- FIN DE LA FUNCIÓN ---
-
 
 // Función para obtener el token CSRF del backend
 const fetchCSRFToken = async () => {
