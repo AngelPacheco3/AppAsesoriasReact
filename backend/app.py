@@ -1,111 +1,76 @@
-from flask import Flask, request, jsonify, redirect, url_for
+import os
+import logging
+from flask import Flask, request, jsonify, redirect, url_for, abort, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-#from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case
-import os
-import logging
 from flask_cors import CORS
 from bleach import clean
 from flask_wtf.csrf import CSRFProtect, generate_csrf, validate_csrf
 from argon2 import PasswordHasher, exceptions as argon2_exceptions
 from werkzeug.utils import secure_filename
-from flask import abort, send_from_directory
 import jwt
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-# --- NUEVO: Importar la librería para cargar el archivo .env ---
 from dotenv import load_dotenv
-from urllib.parse import quote_plus
 
 # --- NUEVO: Cargar las variables de entorno del archivo .env al inicio de la app ---
 load_dotenv()
 
 # Configuración de la aplicación
+load_dotenv()
+
 app = Flask(__name__)
 
-# --- MODIFICADO: Ahora las configuraciones se leen desde las variables de entorno ---
-try:
-    db_user = os.getenv('DB_USER')
-    db_password = os.getenv('DB_PASSWORD')
-    db_host = os.getenv('DB_HOST')
-    db_name = os.getenv('DB_NAME')
-    
-    if os.getenv('DATABASE_URL'):
-         app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-    elif db_user and db_password and db_host and db_name:
-         encoded_password = quote_plus(db_password)
-         app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{db_user}:{encoded_password}@{db_host}/{db_name}'
-    else:
-         # Fallback si no hay variables, para evitar crash inmediato (aunque la conexión fallará luego si no es correcta)
-         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///asesorias.db'
-except Exception as e:
-    print(f"Error configurando DB: {e}")
+# --- 2. Configuración de Base de Datos (Robusta) ---
+db_url = os.getenv('DATABASE_URL')
 
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'dev_jwt_key')
+# DEBUG: Imprimir para verificar conexión en consola
+print(f"\n--- DEBUG INFO ---")
+print(f"Buscando variable DATABASE_URL...")
+print(f"Valor encontrado: {db_url}")
+print(f"--- FIN DEBUG ---\n")
 
-# --- CORRECCIÓN CRÍTICA PARA LOCALHOST ---
-# SESSION_COOKIE_SECURE debe ser False en local (HTTP) para que se guarden las cookies
-app.config['SESSION_COOKIE_SECURE'] = False 
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' # Lax es más permisivo y evita problemas en desarrollo local
-app.config['WTF_CSRF_ENABLED'] = True
+if not db_url:
+    # Si no hay variable, usar SQLite temporal para evitar errores
+    print("¡ADVERTENCIA! No se encontró DATABASE_URL. Usando SQLite local por ahora.")
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    db_url = 'sqlite:///' + os.path.join(base_dir, 'db_temporal.sqlite')
+elif db_url.startswith("postgres://"):
+    # Corrección necesaria para plataformas como Render
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# --- 3. Seguridad y Tokens ---
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'clave_secreta_por_defecto')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt_secreto_por_defecto')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 app.config['JWT_ALGORITHM'] = 'HS256'
 
+# Configuración de Cookies
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
+app.config['WTF_CSRF_ENABLED'] = True
 
-# Se uso SESSION_COOKIE_SAMESITE para prevenir ataques CSRF y XSS, y SESSION_COOKIE_HTTPONLY para prevenir acceso a cookies desde JavaScript.
-
-# Hash de contraseñas
-ph = PasswordHasher()
-
-# Si además deseas activar CSRF en la app:
-csrf = CSRFProtect(app)
-
-# Configuración específica para las imágenes (modificada)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# --- 4. Configuración de Archivos (Uploads) ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}
-
-# --- INICIO DE LA MODIFICACIÓN (SOLUCIÓN DEL ERROR 413) ---
-# Se aumenta el límite de tamaño de archivo de 2MB a 16MB para permitir fotos de perfil más grandes.
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB máximo
-# --- FIN DE LA MODIFICACIÓN ---
 
 # Crear directorio de uploads si no existe
-# Por esto:
-import os
-from flask import send_from_directory
-
-# Configuración relativa y portable
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # Directorio del archivo Flask
-app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'uploads')  # Nueva carpeta para imágenes
-
-# Crear directorio si no existe
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Inicializar extensiones
+# --- 5. Inicializar Extensiones ---
+ph = PasswordHasher()
+csrf = CSRFProtect(app)
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
-#login_manager = LoginManager(app)
-
-# --- ✅ CORRECCIÓN DE CORS (SOLUCIÓN AL ERROR DE REGISTRO) ---
-# Definimos explícitamente los orígenes permitidos para desarrollo local
-allowed_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000"
-]
-
-# Si la URL pública existe en el .env, la añadimos a la lista
-if os.getenv('FRONT_PUBLIC_URL'):
-    allowed_origins.append(os.getenv('FRONT_PUBLIC_URL'))
-
-# Habilitamos CORS permitiendo credenciales (cookies/headers) para estos orígenes
-CORS(app, supports_credentials=True, origins=allowed_origins)
-# --- FIN DE LA CORRECCIÓN DE CORS ---
-
+CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
 
 @app.after_request
 def set_security_headers(response):
